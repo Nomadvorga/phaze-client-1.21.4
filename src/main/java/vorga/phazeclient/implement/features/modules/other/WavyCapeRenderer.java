@@ -25,7 +25,6 @@ public final class WavyCapeRenderer {
     private static final float CAPE_WIDTH = 10.0f / 16.0f; // 0.625 blocks
     private static final float CAPE_HEIGHT = 1.0f;         // 1.0 block
     private static final float CAPE_DEPTH = 1.0f / 16.0f;  // vanilla/wavey depth
-    private static final float PHAZE_CAPE_DEPTH = 3.0f / 16.0f; // visible cloth volume
 
     // Reusable matrices & vector scratch to guarantee zero allocations during render loop
     private static final Matrix4f[] POSITION_MATRICES = new Matrix4f[PART_COUNT];
@@ -44,29 +43,13 @@ public final class WavyCapeRenderer {
 
     private WavyCapeRenderer() {}
 
+    /** Renders a cape as a continuous 16-segment cloth volume. */
     public static void renderWavyCape(
             MatrixStack matrices,
             VertexConsumerProvider vertexConsumers,
             Identifier texture,
             int light,
             PlayerEntityRenderState state
-    ) {
-        renderWavyCape(matrices, vertexConsumers, texture, light, state, false);
-    }
-
-    /**
-     * Renders a cape as a continuous 16-segment cloth volume. Phaze Cape uses
-     * a transparent HD logo atlas; its standard 1/16-block shell is nearly
-     * invisible from an oblique angle, so it gets a modestly thicker shell
-     * without changing the physics, UV layout, or other capes.
-     */
-    public static void renderWavyCape(
-            MatrixStack matrices,
-            VertexConsumerProvider vertexConsumers,
-            Identifier texture,
-            int light,
-            PlayerEntityRenderState state,
-            boolean phazeCape
     ) {
         WaveCapes module = WaveCapes.getInstance();
         if (module == null || !module.isEnabled()) return;
@@ -152,10 +135,10 @@ public final class WavyCapeRenderer {
         }
 
         VertexConsumer consumer = vertexConsumers.getBuffer(RenderLayer.getEntityCutoutNoCull(texture));
-        drawSmoothMesh(consumer, light, phazeCape ? PHAZE_CAPE_DEPTH : CAPE_DEPTH, phazeCape);
+        drawSmoothMesh(consumer, light, CAPE_DEPTH);
     }
 
-    private static void drawSmoothMesh(VertexConsumer consumer, int light, float capeDepth, boolean phazeCape) {
+    private static void drawSmoothMesh(VertexConsumer consumer, int light, float capeDepth) {
         float texelU = 1.0f / 64.0f;
         float texelV = 1.0f / 32.0f;
         float halfW = CAPE_WIDTH / 2.0f;
@@ -218,9 +201,7 @@ public final class WavyCapeRenderer {
                         matPrev, halfW, yTop, -capeDepth, minU, minV,
                     false);
 
-            // 5. Front face (body-facing). Keep both broad faces for Phaze as
-            // well: the thicker shell is only visible when the opposite face
-            // is present, especially while the cloth folds toward the camera.
+            // 5. Front face (body-facing)
             minU = 1.0f * texelU;
             maxU = 11.0f * texelU;
             drawQuad(consumer, light,

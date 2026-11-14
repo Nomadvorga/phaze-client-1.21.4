@@ -66,10 +66,7 @@ public abstract class CapeFeatureRendererMixin
             if (wavy) {
                 matrices.push();
                 getContextModel().body.rotate(matrices);
-                WavyCapeRenderer.renderWavyCape(
-                        matrices, vertexConsumers, texture, light, state,
-                        CosmeticsState.PHAZE_CAPE.equalsIgnoreCase(selection)
-                );
+                WavyCapeRenderer.renderWavyCape(matrices, vertexConsumers, texture, light, state);
                 matrices.pop();
             } else {
                 matrices.push();
@@ -89,9 +86,7 @@ public abstract class CapeFeatureRendererMixin
                 ci.cancel();
                 matrices.push();
                 getContextModel().body.rotate(matrices);
-                WavyCapeRenderer.renderWavyCape(
-                        matrices, vertexConsumers, skinTextures.capeTexture(), light, state, false
-                );
+                WavyCapeRenderer.renderWavyCape(matrices, vertexConsumers, skinTextures.capeTexture(), light, state);
                 matrices.pop();
             }
         }
