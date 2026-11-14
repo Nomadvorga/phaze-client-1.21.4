@@ -27,6 +27,7 @@ import vorga.phazeclient.api.system.shape.implement.Blur;
 import vorga.phazeclient.implement.cosmetics.CosmeticsRenderer;
 import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 import vorga.phazeclient.implement.features.modules.other.TotemTracker;
+import vorga.phazeclient.implement.hud.PaperDollRenderer;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -385,7 +386,7 @@ public abstract class EntityRendererMixin {
             int vanillaBackgroundColor
     ) {
         NametagHud module = NametagHud.getInstance();
-        if (!module.isEnabled() || !module.background.isValue()) {
+        if (!module.isEnabled() || !module.background.isValue() || PaperDollRenderer.isDrawing()) {
             return phaze$resolvedBackgroundColor(vanillaBackgroundColor);
         }
         float blurRadius = module.backgroundBlurRadius.getValue();

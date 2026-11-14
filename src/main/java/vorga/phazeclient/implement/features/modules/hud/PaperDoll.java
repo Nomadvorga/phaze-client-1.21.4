@@ -31,7 +31,7 @@ public final class PaperDoll extends RectHudModule {
     public final SelectSetting headMode = new SelectSetting(
             "Doll Head Locked",
             "How the doll's head reacts to your movement"
-    ).value(HEAD_FLOATY, HEAD_STATIC, HEAD_LOCKED, HEAD_FLOATY_HORIZONTAL, HEAD_STATIC_HORIZONTAL).selected(HEAD_FLOATY);
+    ).value(HEAD_FLOATY, HEAD_STATIC, HEAD_LOCKED, HEAD_FLOATY_HORIZONTAL, HEAD_STATIC_HORIZONTAL).selected(HEAD_STATIC);
     public final ValueSetting lookingSides = new ValueSetting(
             "Looking Sides",
             "How far the doll is turned to the left/right"
@@ -80,6 +80,8 @@ public final class PaperDoll extends RectHudModule {
         showBrackets.setVisible(() -> false);
         mainSection.setVisible(() -> false);
         colorSection.setVisible(() -> false);
+        otherSection.setVisible(() -> false);
+        cornerRounding.setVisible(() -> false);
         headMode.setFullWidth(true);
         lookingSides.setFullWidth(true);
         lookingUpDown.setFullWidth(true);
