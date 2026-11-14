@@ -363,11 +363,14 @@ public abstract class EntityRendererMixin {
         if (!phaze$drawBadgeThisLabel) {
             return;
         }
-        // The letter fills its square: 7 units tall like the nametag's capitals,
-        // centred in the slot from the backdrop's edge (x - 1) to the name (x + 8).
+        // Eight units put the 16px badge on the font's half-pixel grid, with
+        // the letter as tall as the nametag's capitals. Its slot runs from the
+        // backdrop's edge (x - 1) to the name (x + 8); the letter, a unit
+        // narrower than the texture on each side, sits 1.5 from both.
+        float badgeSize = 8.0F;
         PhazeBadgeUtil.drawWorldBadge(
-                matrix, vertexConsumers, layerType, x, y + 0.5F,
-                PhazeBadgeUtil.BADGE_SIZE, light, color,
+                matrix, vertexConsumers, layerType, x - 0.5F, y,
+                badgeSize, light, color,
                 phaze$drawCodeBadgeThisLabel
         );
     }
