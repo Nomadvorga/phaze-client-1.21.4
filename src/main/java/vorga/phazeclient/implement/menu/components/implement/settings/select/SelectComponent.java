@@ -9,9 +9,12 @@ import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
 import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.math.MathUtil;
+import vorga.phazeclient.base.util.render.ScissorManager;
+import vorga.phazeclient.core.Main;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.components.implement.settings.AbstractSettingComponent;
 import vorga.phazeclient.implement.menu.components.implement.settings.ResetIconComponent;
+import vorga.phazeclient.implement.menu.components.implement.settings.SettingLabel;
 import vorga.phazeclient.implement.menu.components.implement.settings.SettingLabelState;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
@@ -35,6 +38,7 @@ public class SelectComponent extends AbstractSettingComponent {
     private static final int ICON_ANIMATION_MS = SettingLabelState.WIDTH_TRANSITION_MS;
 
     private final SelectSetting setting;
+    private final SettingLabel valueLabel = new SettingLabel();
 
     private final Animation transitionAnimation = new DecelerateAnimation()
             .setMs(TRANSITION_MS).setValue(1);
@@ -93,6 +97,7 @@ public class SelectComponent extends AbstractSettingComponent {
                 y + (height - LABEL_TEXT_SIZE) / 2.0F + 1.1F,
                 selectedBoxX - 8.0F, y, height, primaryText());
         updateLabelHover(mouseX, mouseY);
+        valueLabel.updateHover(label.state().isHovered());
     }
 
     @Override
@@ -196,50 +201,37 @@ public class SelectComponent extends AbstractSettingComponent {
         String previousDisplay = previousValue == null ? null : Lang.translate(previousValue);
 
         if (previousValue != null && progress < 1.0F) {
-            float oldAlpha = (1.0F - progress) * currentAlpha;
-            float oldSlide = progress * SLIDE_OFFSET * cycleDirection;
-            float oldWidth = MsdfFonts.bold().getWidth(previousDisplay, VALUE_TEXT_SIZE);
-            float oldCenterX = textAreaX + (textAreaWidth - oldWidth) / 2.0F + oldSlide;
-            MsdfRenderer.renderText(
-                    MsdfFonts.bold(),
-                    previousDisplay,
-                    VALUE_TEXT_SIZE,
-                    MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, oldAlpha),
-                    positionMatrix,
-                    oldCenterX,
-                    textY,
-                    0.0F
-            );
-
-            float newAlpha = progress * currentAlpha;
-            float newSlide = (1.0F - progress) * SLIDE_OFFSET * -cycleDirection;
-            float newWidth = MsdfFonts.bold().getWidth(selectedDisplay, VALUE_TEXT_SIZE);
-            float newCenterX = textAreaX + (textAreaWidth - newWidth) / 2.0F + newSlide;
-            MsdfRenderer.renderText(
-                    MsdfFonts.bold(),
-                    selectedDisplay,
-                    VALUE_TEXT_SIZE,
-                    MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, newAlpha),
-                    positionMatrix,
-                    newCenterX,
-                    textY,
-                    0.0F
-            );
+            // Both values slide inside the box; a long one starts at its left edge, as it settles.
+            ScissorManager scissor = Main.getInstance().getScissorManager();
+            scissor.push(positionMatrix, textAreaX, boxY, textAreaWidth, SELECT_BOX_HEIGHT);
+            try {
+                renderSlidingValue(positionMatrix, previousDisplay, textAreaX, textAreaWidth, textY,
+                        progress * SLIDE_OFFSET * cycleDirection, (1.0F - progress) * currentAlpha);
+                renderSlidingValue(positionMatrix, selectedDisplay, textAreaX, textAreaWidth, textY,
+                        (1.0F - progress) * SLIDE_OFFSET * -cycleDirection, progress * currentAlpha);
+            } finally {
+                scissor.pop();
+            }
         } else {
             previousValue = null;
             float valueWidth = MsdfFonts.bold().getWidth(selectedDisplay, VALUE_TEXT_SIZE);
-            float centerX = textAreaX + (textAreaWidth - valueWidth) / 2.0F;
-            MsdfRenderer.renderText(
-                    MsdfFonts.bold(),
-                    selectedDisplay,
-                    VALUE_TEXT_SIZE,
-                    MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, currentAlpha),
-                    positionMatrix,
-                    centerX,
-                    textY,
-                    0.0F
-            );
+            int color = MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, currentAlpha);
+            if (valueWidth <= textAreaWidth) {
+                MsdfRenderer.renderText(MsdfFonts.bold(), selectedDisplay, VALUE_TEXT_SIZE, color, positionMatrix,
+                        textAreaX + (textAreaWidth - valueWidth) / 2.0F, textY, 0.0F);
+            } else {
+                valueLabel.renderMsdf(matrices, selectedDisplay, VALUE_TEXT_SIZE, textAreaX, textY,
+                        textAreaX + textAreaWidth, boxY, SELECT_BOX_HEIGHT, color);
+            }
         }
+    }
+
+    private static void renderSlidingValue(Matrix4f matrix, String text, float areaX, float areaWidth,
+                                           float textY, float slide, float alpha) {
+        float width = MsdfFonts.bold().getWidth(text, VALUE_TEXT_SIZE);
+        float textX = width <= areaWidth ? areaX + (areaWidth - width) / 2.0F : areaX;
+        MsdfRenderer.renderText(MsdfFonts.bold(), text, VALUE_TEXT_SIZE,
+                MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, alpha), matrix, textX + slide, textY, 0.0F);
     }
 
     private void startTransition(int direction) {
