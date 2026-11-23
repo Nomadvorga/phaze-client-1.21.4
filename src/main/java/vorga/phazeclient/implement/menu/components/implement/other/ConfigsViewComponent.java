@@ -1,6 +1,5 @@
 package vorga.phazeclient.implement.menu.components.implement.other;
 
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
@@ -29,62 +28,57 @@ import java.util.Map;
 
 /**
  * "CONFIGS" tab content. The sidebar is hidden by {@code MenuScreen}
- * while this view is open, so the row list spans the full menu width
- * minus a tiny margin. No header / back-arrow / title - the user told
- * us those duplicated information already shown in the top tabs.
+ * while this view is open, so the card grid spans the full menu width
+ * minus equal side margins. No header / back-arrow / title - the user
+ * told us those duplicated information already shown in the top tabs.
  *
- * <p>Each row carries:
+ * <p>Three square-ish cards per row, each carrying:
  * <ul>
- *   <li>Top-left: {@code dd.MM HH:mm} timestamp from the file's
- *       last-modified time. Cached when the view opens so we don't
- *       hammer the disk on every frame.</li>
- *   <li>Bottom-left: the config name + author tag. Author is the
- *       local Minecraft username (server-authoritative tagging will
- *       come when accounts ship).</li>
- *   <li>Right: a vertical three-dot kebab. Clicking it spawns a
- *       small popup at the click point with three actions
- *       (Поделиться / Переименовать / Удалить).</li>
+ *   <li>Top-left: file / file-import type icon.</li>
+ *   <li>Top: config name (ellipsis-trimmed to the card width).</li>
+ *   <li>Under the name: size chip + short modified chip
+ *       ("Сегодня, 03:32", "Вчера, 21:07", "1 день назад").</li>
+ *   <li>Bottom-right: three square keys (rename / share / delete),
+ *       delete on a red-tinted plate.</li>
  * </ul>
  *
- * <p>Click on the row body activates that config (loads it).
+ * <p>Click on the card body activates that config (loads it). The wheel
+ * moves a scroll target that the render eases towards, and the scissor
+ * window ends flush with the GUI's bottom edge.
  */
 public class ConfigsViewComponent extends AbstractComponent {
 
-    private static final float ROW_HEIGHT = 40.0F;
-    private static final float ROW_GAP = 6.0F;
-    private static final float ROW_RADIUS = 5.0F;
-    private static final float ROW_PAD_X = 12.0F;
-    private static final float TIMESTAMP_SIZE = 5.6F;
+    private static final float CARD_HEIGHT = 54.0F;
+    private static final float CARD_GAP = 4.0F;
+    private static final float CARD_RADIUS = 4.0F;
+    private static final int CARD_COLUMNS = 3;
+    private static final float CARD_PAD = 8.0F;
+    private static final float CARD_ICON_SIZE = 16.0F;
     private static final float NAME_SIZE = 7.0F;
     private static final float META_SIZE = 5.6F;
-    /** Single inline action button. Three of them stack right-edge:
-     *  rename, share, delete. Hover-anim per (config, kind) so each
-     *  button glows independently when the cursor lands on it. */
-    private static final float ACTION_ICON_SIZE = 11.0F;
-    private static final float ACTION_BUTTON_W = 22.0F;
-    private static final float ACTION_BUTTON_GAP = 2.0F;
+    /** Square inline action buttons (rename / share / delete), each with
+     *  its own rounded-square plate so they read as three keys instead
+     *  of one grouped strip. Hover-anim per (config, kind). */
+    private static final float ACTION_BUTTON_SIZE = 14.0F;
+    private static final float ACTION_BUTTON_GAP = 3.0F;
+    private static final float ACTION_BUTTON_RADIUS = 3.5F;
+    private static final float ACTION_ICON_SIZE = 8.5F;
     private static final float ACTIONS_TRAIL_PAD = 6.0F;
-    private static final float DOT_SIZE = 1.6F;
-    private static final float DOT_GAP = 1.4F;
-    /** Inline separator between config name and author label.
-     *  Drawn procedurally as a circle so its visual size and text
-     *  spacing stay exact instead of depending on dot.png's large
-     *  transparent padding. */
-    private static final float NAME_DOT_SIZE = (16.7F * 44.0F / 256.0F) / 1.1F;
-    private static final float NAME_DOT_TEXT_GAP = 2.0F;
+    private static final float ACTIONS_BOTTOM_PAD = 6.0F;
     /** Size of the inline meta icons (size, clock for last-modified,
      *  cloud for imported). The cloud / clock icons are visually
      *  lighter than the size icon, so they're rendered larger to
      *  read at the same weight in the strip. */
     private static final float META_ICON_SIZE = 6.5F;
     private static final float META_ICON_SIZE_LARGE = 7.8F;
-    private static final float META_ICON_GAP = 3.5F;
-    private static final float META_GROUP_GAP = 12.0F;
+    private static final float META_ICON_GAP = 3.0F;
+    private static final float META_GROUP_GAP = 8.0F;
 
-    /** Top + bottom inset from the menu's content area. Keeps the
-     *  list out from under the top tabs and the bottom blur frame. */
+    /** Top inset keeps the grid out from under the top tabs. The bottom
+     *  inset is hair-thin so the scissor (and therefore the cards) ends
+     *  flush with the GUI's bottom edge instead of leaving a dead band. */
     private static final float TOP_MARGIN = 50.0F;
-    private static final float BOTTOM_MARGIN = 16.0F;
+    private static final float BOTTOM_MARGIN = 2.0F;
     private static final float SIDE_MARGIN = 12.0F;
 
     private final Animation openAnim = new DecelerateAnimation().setMs(1).setValue(1);
@@ -114,15 +108,17 @@ public class ConfigsViewComponent extends AbstractComponent {
 
     private boolean open = false;
 
-    private final Map<String, String> timestampCache = new LinkedHashMap<>();
     private final Map<String, String> sizeCache = new LinkedHashMap<>();
     private final Map<String, Long> modifiedTimeCache = new LinkedHashMap<>();
     private final Map<String, String> relativeModifiedCache = new LinkedHashMap<>();
     private final Map<String, Boolean> importedCache = new LinkedHashMap<>();
-    private final SimpleDateFormat tsFormat = new SimpleDateFormat("dd.MM HH:mm", Locale.ROOT);
+    private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm", Locale.ROOT);
     private long nextRelativeRefreshMs = 0L;
 
     private float scrollOffset = 0.0F;
+    /** Glide target follower: mouse wheel moves {@link #scrollOffset},
+     *  rendering eases towards it so the grid scrolls smoothly. */
+    private float smoothScrollOffset = 0.0F;
     private float maxScrollOffset = 0.0F;
 
     public void open() {
@@ -131,6 +127,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         if (this.popup != null) this.popup.close();
         this.popup = null;
         this.scrollOffset = 0.0F;
+        this.smoothScrollOffset = 0.0F;
         refreshMetadataCaches();
     }
 
@@ -153,7 +150,6 @@ public class ConfigsViewComponent extends AbstractComponent {
     }
 
     private void refreshMetadataCaches() {
-        timestampCache.clear();
         sizeCache.clear();
         modifiedTimeCache.clear();
         relativeModifiedCache.clear();
@@ -164,7 +160,6 @@ public class ConfigsViewComponent extends AbstractComponent {
             File file = mgr.getConfigFile(name);
             boolean exists = file.exists();
             long mtime = exists ? file.lastModified() : 0L;
-            timestampCache.put(name, mtime > 0 ? tsFormat.format(new Date(mtime)) : "—");
             sizeCache.put(name, exists ? humanReadableSize(file.length()) : "—");
             modifiedTimeCache.put(name, mtime);
             relativeModifiedCache.put(name, humanReadableModified(now, mtime));
@@ -235,41 +230,44 @@ public class ConfigsViewComponent extends AbstractComponent {
         // Bound scroll to the actual visible window so the user can
         // never scroll past the last row or above the first.
         float listH = listBottom - listY;
-        float contentH = names.length * (ROW_HEIGHT + ROW_GAP) - ROW_GAP;
+        int rowCount = (names.length + CARD_COLUMNS - 1) / CARD_COLUMNS;
+        float contentH = rowCount * (CARD_HEIGHT + CARD_GAP) - CARD_GAP;
         maxScrollOffset = Math.max(0.0F, contentH - listH);
         if (scrollOffset < 0.0F) scrollOffset = 0.0F;
         if (scrollOffset > maxScrollOffset) scrollOffset = maxScrollOffset;
+        // Ease the rendered offset towards the wheel target so scrolling
+        // glides instead of snapping one row per notch.
+        smoothScrollOffset = (float) MathUtil.interpolateSmooth(3.2D, smoothScrollOffset, scrollOffset);
+        if (Math.abs(smoothScrollOffset - scrollOffset) < 0.01F) {
+            smoothScrollOffset = scrollOffset;
+        }
 
-        // GL scissor so any row that runs past the visible window is
-        // clipped to it. Without this the bottom row would visibly
-        // poke under the menu's rounded bottom border.
+        // GL scissor so any card that runs past the visible window is
+        // clipped to it. The window ends flush with the GUI bottom edge.
         BatchedRectangle.flushIfBatching();
         context.enableScissor((int) listX, (int) listY,
                 (int) (listX + listW), (int) listBottom);
 
-        String authorLabel = resolveAuthorLabel();
-        float rowY = listY - scrollOffset;
-        for (String name : names) {
-            if (rowY + ROW_HEIGHT > listY && rowY < listBottom) {
-                renderRow(matrix, mouseX, mouseY, listX, rowY, listW, name, authorLabel, fadeAlpha);
+        // Equal side margins + equal column gaps keep the grid centred.
+        float cardW = (listW - CARD_GAP * (CARD_COLUMNS - 1)) / CARD_COLUMNS;
+        for (int i = 0; i < names.length; i++) {
+            int column = i % CARD_COLUMNS;
+            int row = i / CARD_COLUMNS;
+            float cardX = listX + column * (cardW + CARD_GAP);
+            float cardY = listY + row * (CARD_HEIGHT + CARD_GAP) - smoothScrollOffset;
+            if (cardY + CARD_HEIGHT > listY && cardY < listBottom) {
+                renderCard(matrix, mouseX, mouseY, cardX, cardY, cardW, names[i], fadeAlpha);
             }
-            rowY += ROW_HEIGHT + ROW_GAP;
         }
 
         BatchedRectangle.flushIfBatching();
         context.disableScissor();
     }
 
-    /** Left padding inside the row, before the type icon. */
-    private static final float ICON_AREA_W = 28.0F;
-    /** Visual size of the file / file_import icon. Smaller than the
-     *  area itself so the icon has comfortable breathing room. */
-    private static final float ICON_SIZE = 19.6875F;
-
-    private void renderRow(MatrixStack matrix, int mouseX, int mouseY,
-                           float listX, float rowY, float listW,
-                           String name, String authorLabel, float fadeAlpha) {
-        boolean hovered = MathUtil.isHovered(mouseX, mouseY, listX, rowY, listW, ROW_HEIGHT);
+    private void renderCard(MatrixStack matrix, int mouseX, int mouseY,
+                            float cardX, float cardY, float cardW,
+                            String name, float fadeAlpha) {
+        boolean hovered = MathUtil.isHovered(mouseX, mouseY, cardX, cardY, cardW, CARD_HEIGHT);
         if (hovered) {
             vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
         }
@@ -280,11 +278,9 @@ public class ConfigsViewComponent extends AbstractComponent {
 
         // Active config gets the same green-tinted outline that an
         // enabled module card uses (BORDER → CHIP_ACTIVE 75% mix);
-        // every other row keeps the standard BORDER outline like a
-        // disabled module card. The per-row activeAnim tweens the
-        // mix factor, so a row visibly fades INTO the active look
-        // when the user picks it (and the previously-active row
-        // fades back out at the same time) instead of snapping.
+        // every other card keeps the standard BORDER outline. The
+        // per-card activeAnim tweens the mix factor so picking a config
+        // fades the highlight in instead of snapping.
         boolean isActive = name.equalsIgnoreCase(ConfigManager.getInstance().getCurrentConfigName());
         Animation activeAnim = activeAnims.computeIfAbsent(name,
                 k -> new DecelerateAnimation().setMs(300).setValue(1));
@@ -293,91 +289,53 @@ public class ConfigsViewComponent extends AbstractComponent {
         int baseOutline = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.CHIP_ACTIVE, activeT * 0.75F);
         int fill = MenuStyle.mix(MenuStyle.PANEL_CHIP, MenuStyle.CARD_OPTIONS, 0.30F + h * 0.10F);
         int outline = MenuStyle.mix(baseOutline, MenuStyle.BORDER_LIGHT, h * 0.40F);
-        rectangle.render(ShapeProperties.create(matrix, listX, rowY, listW, ROW_HEIGHT)
-                .round(ROW_RADIUS).thickness(3.2F)
+        rectangle.render(ShapeProperties.create(matrix, cardX, cardY, cardW, CARD_HEIGHT)
+                .round(CARD_RADIUS).thickness(1.0F + activeT * 1.2F)
                 .outlineColor(MenuStyle.withAlpha(outline, fadeAlpha))
                 .color(MenuStyle.withAlpha(fill, fadeAlpha * 0.92F))
                 .build());
 
-        // Type icon on the left. {@code file_import.png} for configs
+        // Type icon top-left. {@code file_import.png} for configs
         // imported from a server share-key, {@code file.png} for
-        // locally created configs. The marker comes from
-        // {@link ConfigManager#isImportedConfig}.
+        // locally created configs.
         boolean imported = importedCache.getOrDefault(name, Boolean.FALSE);
         String iconTexture = imported ? "textures/file_import.png" : "textures/file.png";
-        float iconWidth = resolveUiIconWidth(iconTexture, ICON_SIZE);
-        float iconX = listX + 9.0F + (ICON_AREA_W - 6.0F - iconWidth) * 0.5F;
-        float iconY = rowY + (ROW_HEIGHT - ICON_SIZE) * 0.5F;
-        renderUiIcon(matrix, iconTexture, iconX, iconY, iconWidth, ICON_SIZE,
+        float iconWidth = resolveUiIconWidth(iconTexture, CARD_ICON_SIZE);
+        renderUiIcon(matrix, iconTexture, cardX + CARD_PAD, cardY + CARD_PAD,
+                iconWidth, CARD_ICON_SIZE,
                 MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, fadeAlpha * 0.85F));
 
-        // Top: timestamp
-        // Middle: name • author (with dot.png separator)
-        // Bottom: size + last-modified / imported-from-cloud
-        float textX = listX + ROW_PAD_X + ICON_AREA_W;
-        float lineGap = 1.6F;
-        float metaGap = 1.6F;
-        float blockHeight = TIMESTAMP_SIZE + lineGap + NAME_SIZE + metaGap + META_SIZE;
-        float timestampY = rowY + (ROW_HEIGHT - blockHeight) * 0.5F;
-        float nameY = timestampY + TIMESTAMP_SIZE + lineGap;
-        float metaY = nameY + NAME_SIZE + metaGap;
-
-        String ts = timestampCache.getOrDefault(name, "—");
+        // Name beside the icon, meta strip (size + modified) under it.
+        float textX = cardX + CARD_PAD + CARD_ICON_SIZE + 6.0F;
+        float nameY = cardY + CARD_PAD + 1.0F;
+        float metaY = nameY + NAME_SIZE + 4.0F;
+        float nameMaxW = cardW - (textX - cardX) - CARD_PAD;
         MsdfRenderer.renderText(
-                MsdfFonts.bold(), ts, TIMESTAMP_SIZE,
-                MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, fadeAlpha * 0.85F),
-                matrix.peek().getPositionMatrix(),
-                textX,
-                timestampY,
-                0.0F
-        );
-
-        // Name (bold) + dot separator + author (lighter).
-        int nameColor = MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, fadeAlpha);
-        int authorColor = MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, fadeAlpha * 0.85F);
-        MsdfRenderer.renderText(
-                MsdfFonts.bold(), name, NAME_SIZE,
-                nameColor,
+                MsdfFonts.bold(), fitLabel(name, nameMaxW), NAME_SIZE,
+                MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, fadeAlpha),
                 matrix.peek().getPositionMatrix(),
                 textX,
                 nameY,
                 0.0F
         );
-        float nameWidth = MsdfFonts.bold().getWidth(name, NAME_SIZE);
-        float dotX = textX + nameWidth + NAME_DOT_TEXT_GAP;
-        // Centre against the cap-height middle (~0.42 of the font
-        // size from the text's top) instead of the full bbox - the
-        // bbox includes descender room that pushes the dot below
-        // the letters' optical mid-line.
-        float dotY = nameY + NAME_SIZE * 0.42F - NAME_DOT_SIZE * 0.5F;
-        rectangle.render(ShapeProperties.create(matrix, dotX, dotY, NAME_DOT_SIZE, NAME_DOT_SIZE)
-                .round(NAME_DOT_SIZE * 0.5F)
-                .color(MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, fadeAlpha * 0.85F))
-                .build());
-        float authorX = dotX + NAME_DOT_SIZE + NAME_DOT_TEXT_GAP;
-        if (authorLabel != null && !authorLabel.isEmpty()) {
-            MsdfRenderer.renderText(
-                    MsdfFonts.bold(), authorLabel, NAME_SIZE,
-                    authorColor,
-                    matrix.peek().getPositionMatrix(),
-                    authorX,
-                    nameY,
-                    0.0F
-            );
+        renderRowMeta(matrix, cardX, textX, metaY, cardW, name, imported, fadeAlpha);
+
+        // Three square action buttons bottom-right: rename → share →
+        // delete. Each has its own plate, hover animation and hit-area.
+        renderActionButtons(matrix, mouseX, mouseY, cardX, cardY, cardW, name, fadeAlpha);
+    }
+
+    /** Trims a card title with an ellipsis when it outgrows the card. */
+    private static String fitLabel(String text, float maxWidth) {
+        if (MsdfFonts.bold().getWidth(text, NAME_SIZE) <= maxWidth) return text;
+        String ellipsis = "…";
+        float ellipsisWidth = MsdfFonts.bold().getWidth(ellipsis, NAME_SIZE);
+        StringBuilder builder = new StringBuilder(text);
+        while (builder.length() > 1
+                && MsdfFonts.bold().getWidth(builder.toString(), NAME_SIZE) + ellipsisWidth > maxWidth) {
+            builder.deleteCharAt(builder.length() - 1);
         }
-
-        // Bottom meta line. Imported configs swap the
-        // "Last modified ..." chip for an "Imported from cloud"
-        // marker so the user can spot remote-origin entries at a
-        // glance without hovering. Size is shown for both.
-        renderRowMeta(matrix, textX, metaY, name, imported, fadeAlpha);
-
-        // Three inline action buttons on the right side: rename →
-        // share (create key) → delete, in that visual order. Each
-        // button has its own hover animation and click hit-area.
-        // The buttons sit RIGHT-aligned with a small trailing pad
-        // so they don't kiss the row's outer border.
-        renderActionButtons(matrix, mouseX, mouseY, listX, rowY, listW, name, fadeAlpha);
+        return builder.append(ellipsis).toString();
     }
 
     /**
@@ -386,36 +344,53 @@ public class ConfigsViewComponent extends AbstractComponent {
      * separated by a fixed gap so the strip layout stays predictable
      * across different label widths.
      */
-    private void renderRowMeta(MatrixStack matrix, float startX, float metaY,
-                               String configName, boolean imported, float fadeAlpha) {
-        float cursorX = startX;
+    private void renderRowMeta(MatrixStack matrix, float cardX, float textX, float metaY,
+                               float cardW, String configName, boolean imported, float fadeAlpha) {
         int metaColor = MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, fadeAlpha * 0.95F);
+        String sizeLabel = sizeCache.getOrDefault(configName, "—");
+        String modifiedLabel = imported
+                ? Lang.translate("Imported from cloud")
+                : relativeModifiedCache.getOrDefault(configName, "—");
+        String modifiedIcon = imported ? "textures/cloud.png" : "textures/clock.png";
+
+        // The strip normally aligns with the name. On narrow cards it
+        // falls back to the full card width, and the imported label
+        // shortens, so nothing ever runs past the card's right edge.
+        float startX = textX;
+        float available = cardX + cardW - CARD_PAD - startX;
+        float total = metaChipWidth("textures/size.png", sizeLabel, META_ICON_SIZE)
+                + META_GROUP_GAP
+                + metaChipWidth(modifiedIcon, modifiedLabel, META_ICON_SIZE_LARGE);
+        if (total > available) {
+            startX = cardX + CARD_PAD;
+            available = cardW - CARD_PAD * 2.0F;
+        }
+        if (imported && total > available) {
+            modifiedLabel = Lang.RU.equals(Lang.getActive()) ? "Из облака" : "From cloud";
+        }
 
         // Size chip - dedicated size.png icon, tinted with the same
         // muted text colour so it reads as part of the meta strip
-        // instead of standing out as a stray accent. Label nudged
-        // 1px down so the text sits on the icon's optical centre.
-        cursorX = renderMetaChip(matrix, cursorX, metaY,
+        // instead of standing out as a stray accent. The icon carries
+        // the meaning, so the label stays short (value only).
+        float cursorX = renderMetaChip(matrix, startX, metaY,
                 "textures/size.png",
-                Lang.translate("Size") + ": " + sizeCache.getOrDefault(configName, "—"),
+                sizeLabel,
                 metaColor, fadeAlpha, 1.0F, META_ICON_SIZE);
         cursorX += META_GROUP_GAP;
 
-        if (imported) {
-            // Imported chip - cloud-arrow-down. Icon at 1.5× the
-            // base meta-icon size (the cloud glyph reads lighter at
-            // 6.5px); text nudged down 1.5px to sit on the icon's
-            // visual centre line.
-            renderMetaChip(matrix, cursorX, metaY,
-                    "textures/cloud.png",
-                    Lang.translate("Imported from cloud"),
-                    metaColor, fadeAlpha, 1.5F, META_ICON_SIZE_LARGE);
-        } else {
-            renderMetaChip(matrix, cursorX, metaY,
-                    "textures/clock.png",
-                    Lang.translate("Last modified") + ": " + relativeModifiedCache.getOrDefault(configName, "—"),
-                    metaColor, fadeAlpha, 1.5F, META_ICON_SIZE_LARGE);
-        }
+        // Modified chip - clock icon + short relative label
+        // ("Сегодня, 03:32" / "1 день назад"); imported configs swap it
+        // for the cloud marker so remote-origin entries spot at a glance.
+        renderMetaChip(matrix, cursorX, metaY,
+                modifiedIcon,
+                modifiedLabel,
+                metaColor, fadeAlpha, 1.5F, META_ICON_SIZE_LARGE);
+    }
+
+    private float metaChipWidth(String iconTexture, String label, float iconSize) {
+        return resolveUiIconWidth(iconTexture, iconSize) + META_ICON_GAP
+                + MsdfFonts.bold().getWidth(label, META_SIZE);
     }
 
     /** Renders one icon+label chip and returns the x coordinate
@@ -474,14 +449,33 @@ public class ConfigsViewComponent extends AbstractComponent {
         if (sec < 60L) return Lang.translate("just now");
         long min = sec / 60L;
         if (min < 60L) return formatRelativeAgo(min, "minute");
+        // Recent days read better as "Сегодня, 03:32" / "Вчера, 21:07"
+        // than as a growing hour count; older entries stay relative.
+        java.util.Calendar modified = java.util.Calendar.getInstance();
+        modified.setTimeInMillis(modifiedAt);
+        java.util.Calendar day = java.util.Calendar.getInstance();
+        day.setTimeInMillis(now);
+        boolean russian = Lang.RU.equals(Lang.getActive());
+        String clock = timeFormat.format(new Date(modifiedAt));
+        if (sameDay(modified, day)) {
+            return (russian ? "Сегодня, " : "Today, ") + clock;
+        }
+        day.add(java.util.Calendar.DAY_OF_YEAR, -1);
+        if (sameDay(modified, day)) {
+            return (russian ? "Вчера, " : "Yesterday, ") + clock;
+        }
         long hr = min / 60L;
-        if (hr < 24L) return formatRelativeAgo(hr, "hour");
-        long day = hr / 24L;
-        if (day < 30L) return formatRelativeAgo(day, "day");
-        long mon = day / 30L;
+        long dayCount = hr / 24L;
+        if (dayCount < 30L) return formatRelativeAgo(dayCount, "day");
+        long mon = dayCount / 30L;
         if (mon < 12L) return formatRelativeAgo(mon, "month");
         long yr = mon / 12L;
         return formatRelativeAgo(yr, "year");
+    }
+
+    private static boolean sameDay(java.util.Calendar a, java.util.Calendar b) {
+        return a.get(java.util.Calendar.YEAR) == b.get(java.util.Calendar.YEAR)
+                && a.get(java.util.Calendar.DAY_OF_YEAR) == b.get(java.util.Calendar.DAY_OF_YEAR);
     }
 
     private String formatRelativeAgo(long value, String unit) {
@@ -528,43 +522,24 @@ public class ConfigsViewComponent extends AbstractComponent {
     }
 
     private void renderActionButtons(MatrixStack matrix, int mouseX, int mouseY,
-                                     float listX, float rowY, float listW,
+                                     float cardX, float cardY, float cardW,
                                      String configName, float fadeAlpha) {
         ActionKind[] kinds = ActionKind.values();
-        float totalW = kinds.length * ACTION_BUTTON_W
+        float totalW = kinds.length * ACTION_BUTTON_SIZE
                 + (kinds.length - 1) * ACTION_BUTTON_GAP;
-        float startX = listX + listW - totalW - ACTIONS_TRAIL_PAD;
-
-        // Group container behind the three buttons. Slightly inset
-        // top/bottom (centered on the row) with a soft rounded
-        // panel so the buttons read as a unit instead of three
-        // floating glyphs. Background is fully opaque per the user
-        // request, with the panel's border tinted by the menu's
-        // standard outline so it sits on the row without fighting
-        // the row's own outline.
-        float groupPadX = 2.0F;
-        float groupPadY = 10.0F;
-        float groupX = startX - groupPadX;
-        float groupY = rowY + groupPadY;
-        float groupW = totalW + groupPadX * 2.0F;
-        float groupH = ROW_HEIGHT - groupPadY * 2.0F;
-        rectangle.render(ShapeProperties.create(matrix, groupX, groupY, groupW, groupH)
-                .round(4.0F).thickness(1.0F)
-                .outlineColor(MenuStyle.withAlpha(MenuStyle.BORDER, fadeAlpha))
-                .color(MenuStyle.withAlpha(MenuStyle.PANEL_BG, fadeAlpha))
-                .build());
-
+        float startX = cardX + cardW - totalW - ACTIONS_TRAIL_PAD;
+        float btnY = cardY + CARD_HEIGHT - ACTION_BUTTON_SIZE - ACTIONS_BOTTOM_PAD;
         for (int i = 0; i < kinds.length; i++) {
             ActionKind kind = kinds[i];
-            float btnX = startX + i * (ACTION_BUTTON_W + ACTION_BUTTON_GAP);
-            renderActionButton(matrix, mouseX, mouseY, btnX, rowY, configName, kind, fadeAlpha);
+            float btnX = startX + i * (ACTION_BUTTON_SIZE + ACTION_BUTTON_GAP);
+            renderActionButton(matrix, mouseX, mouseY, btnX, btnY, configName, kind, fadeAlpha);
         }
     }
 
     private void renderActionButton(MatrixStack matrix, int mouseX, int mouseY,
-                                    float btnX, float rowY, String configName,
+                                    float btnX, float btnY, String configName,
                                     ActionKind kind, float fadeAlpha) {
-        boolean hover = MathUtil.isHovered(mouseX, mouseY, btnX, rowY, ACTION_BUTTON_W, ROW_HEIGHT);
+        boolean hover = MathUtil.isHovered(mouseX, mouseY, btnX, btnY, ACTION_BUTTON_SIZE, ACTION_BUTTON_SIZE);
         if (hover) {
             vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
         }
@@ -574,11 +549,26 @@ public class ConfigsViewComponent extends AbstractComponent {
         a.setDirection(hover ? Direction.FORWARDS : Direction.BACKWARDS);
         float h = a.getOutputFloat();
 
-        int color = kind == ActionKind.DELETE
+        // Each key sits on its own rounded-square plate; delete keeps a
+        // red-tinted plate so the destructive action reads at a glance.
+        boolean delete = kind == ActionKind.DELETE;
+        int plateFill = delete
+                ? MenuStyle.mix(MenuStyle.PANEL_BG, 0xFFB55F73, 0.14F + h * 0.12F)
+                : MenuStyle.mix(MenuStyle.PANEL_CHIP, MenuStyle.CARD_OPTIONS, 0.35F + h * 0.15F);
+        int plateOutline = delete
+                ? MenuStyle.mix(0xFFB55F73, 0xFFFF9BAA, 0.25F + h * 0.50F)
+                : MenuStyle.mix(MenuStyle.BORDER, MenuStyle.BORDER_LIGHT, 0.20F + h * 0.60F);
+        rectangle.render(ShapeProperties.create(matrix, btnX, btnY, ACTION_BUTTON_SIZE, ACTION_BUTTON_SIZE)
+                .round(ACTION_BUTTON_RADIUS).thickness(1.0F)
+                .outlineColor(MenuStyle.withAlpha(plateOutline, fadeAlpha))
+                .color(MenuStyle.withAlpha(plateFill, fadeAlpha))
+                .build());
+
+        int color = delete
                 ? MenuStyle.mix(0xFFB55F73, 0xFFFF9BAA, 0.30F + h * 0.55F)
                 : MenuStyle.mix(MenuStyle.TEXT_MUTED, MenuStyle.TEXT_PRIMARY, 0.30F + h * 0.55F);
-        float iconX = btnX + (ACTION_BUTTON_W - ACTION_ICON_SIZE) * 0.5F;
-        float iconY = rowY + (ROW_HEIGHT - ACTION_ICON_SIZE) * 0.5F;
+        float iconX = btnX + (ACTION_BUTTON_SIZE - ACTION_ICON_SIZE) * 0.5F;
+        float iconY = btnY + (ACTION_BUTTON_SIZE - ACTION_ICON_SIZE) * 0.5F;
         image.setTexture(kind.texture)
                 .render(ShapeProperties.create(matrix, iconX, iconY, ACTION_ICON_SIZE, ACTION_ICON_SIZE)
                         .color(MenuStyle.withAlpha(color, fadeAlpha))
@@ -622,23 +612,28 @@ public class ConfigsViewComponent extends AbstractComponent {
 
         ConfigManager mgr = ConfigManager.getInstance();
         String[] names = mgr.getConfigList();
-        float rowY = listTop - scrollOffset;
+        float cardW = (listW - CARD_GAP * (CARD_COLUMNS - 1)) / CARD_COLUMNS;
         ActionKind[] kinds = ActionKind.values();
-        float actionsTotalW = kinds.length * ACTION_BUTTON_W
+        float actionsTotalW = kinds.length * ACTION_BUTTON_SIZE
                 + (kinds.length - 1) * ACTION_BUTTON_GAP;
-        float actionsStartX = listX + listW - actionsTotalW - ACTIONS_TRAIL_PAD;
-        float bodyEndX = actionsStartX - 2.0F;
-        for (String name : names) {
-            if (rowY + ROW_HEIGHT > listTop && rowY < listBottom) {
-                // Inline action buttons take precedence over the
+        for (int i = 0; i < names.length; i++) {
+            String name = names[i];
+            int column = i % CARD_COLUMNS;
+            int row = i / CARD_COLUMNS;
+            float cardX = listX + column * (cardW + CARD_GAP);
+            float cardY = listTop + row * (CARD_HEIGHT + CARD_GAP) - smoothScrollOffset;
+            if (cardY + CARD_HEIGHT > listTop && cardY < listBottom) {
+                // Square action buttons take precedence over the
                 // body-click "load this config" hit-area, so the
-                // user can rename / share / delete without the row
+                // user can rename / share / delete without the card
                 // also activating itself underneath.
+                float actionsStartX = cardX + cardW - actionsTotalW - ACTIONS_TRAIL_PAD;
+                float btnY = cardY + CARD_HEIGHT - ACTION_BUTTON_SIZE - ACTIONS_BOTTOM_PAD;
                 ActionKind hit = null;
-                for (int i = 0; i < kinds.length; i++) {
-                    float btnX = actionsStartX + i * (ACTION_BUTTON_W + ACTION_BUTTON_GAP);
-                    if (MathUtil.isHovered(mouseX, mouseY, btnX, rowY, ACTION_BUTTON_W, ROW_HEIGHT)) {
-                        hit = kinds[i];
+                for (int k = 0; k < kinds.length; k++) {
+                    float btnX = actionsStartX + k * (ACTION_BUTTON_SIZE + ACTION_BUTTON_GAP);
+                    if (MathUtil.isHovered(mouseX, mouseY, btnX, btnY, ACTION_BUTTON_SIZE, ACTION_BUTTON_SIZE)) {
+                        hit = kinds[k];
                         break;
                     }
                 }
@@ -648,14 +643,13 @@ public class ConfigsViewComponent extends AbstractComponent {
                     return true;
                 }
 
-                if (MathUtil.isHovered(mouseX, mouseY, listX, rowY, bodyEndX - listX, ROW_HEIGHT)) {
+                if (MathUtil.isHovered(mouseX, mouseY, cardX, cardY, cardW, CARD_HEIGHT)) {
                     playButtonClickSound();
                     mgr.loadConfig(name);
                     refreshMetadataCaches();
                     return true;
                 }
             }
-            rowY += ROW_HEIGHT + ROW_GAP;
         }
         return false;
     }
@@ -690,7 +684,7 @@ public class ConfigsViewComponent extends AbstractComponent {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
         if (!open) return false;
-        scrollOffset -= (float) amount * (ROW_HEIGHT + ROW_GAP);
+        scrollOffset -= (float) amount * (CARD_HEIGHT + CARD_GAP);
         if (scrollOffset < 0.0F) scrollOffset = 0.0F;
         if (scrollOffset > maxScrollOffset) scrollOffset = maxScrollOffset;
         return true;
@@ -699,16 +693,6 @@ public class ConfigsViewComponent extends AbstractComponent {
     /* ============================================================ */
     /* helpers                                                      */
     /* ============================================================ */
-
-    private static String resolveAuthorLabel() {
-        try {
-            MinecraftClient mc = MinecraftClient.getInstance();
-            if (mc != null && mc.getSession() != null && mc.getSession().getUsername() != null) {
-                return mc.getSession().getUsername();
-            }
-        } catch (Throwable ignored) {}
-        return "PHAZE";
-    }
 
     private static String nextRename(String base) {
         for (int i = 2; i < 100; i++) {
