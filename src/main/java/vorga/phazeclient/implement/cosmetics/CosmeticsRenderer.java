@@ -35,12 +35,15 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /** Client-only entry point for attached cosmetics. */
 public final class CosmeticsRenderer {
-    public static final Identifier PHAZE_CAPE_TEXTURE =
-            Identifier.of("phaze", "textures/cosmetics/phaze_cape.png");
     private static final Logger LOG = LoggerFactory.getLogger("PhazeCosmetics");
     private static final Map<ModelKey, CachedModel> MODELS = new HashMap<>();
     private static final Map<ModelKey, Long> FAILED_MODELS = new HashMap<>();
@@ -557,6 +560,13 @@ public final class CosmeticsRenderer {
         List<DecodedCapeFrame> decoded = isGif(file)
                 ? readGifFrames(file)
                 : readStaticCapeFrame(file);
+        return registerCapeFrames(client, textureToken, decoded);
+    }
+
+    /** GL upload half of cape loading; the decode half can run off-thread. */
+    private static List<CapeFrame> registerCapeFrames(
+            MinecraftClient client, String textureToken, List<DecodedCapeFrame> decoded
+    ) {
         List<CapeFrame> frames = new ArrayList<>(decoded.size());
         try {
             for (int index = 0; index < decoded.size(); index++) {
@@ -779,6 +789,144 @@ public final class CosmeticsRenderer {
             return null;
         }
     }
+
+    // ------------------------------------------------------------------
+    // Background prewarm. Scrolling the catalog used to parse Blockbench
+    // archives and decode every GIF frame on the render thread the first
+    // frame a card became visible - the scroll freezes users reported.
+    // The CPU half now runs on a daemon thread when the page opens; only
+    // the small GL upload half stays on the render thread, budgeted per
+    // frame by uploadPrewarmed. The snapshot cache itself is untouched,
+    // so steady-state menu FPS stays at the cached-blit level.
+    // ------------------------------------------------------------------
+    private static final Map<ModelKey, PrewarmedModel> PREWARMED_MODELS = new ConcurrentHashMap<>();
+    private static final Map<Path, PrewarmedCape> PREWARMED_CAPES = new ConcurrentHashMap<>();
+    private static final Set<String> PREWARM_IN_FLIGHT = ConcurrentHashMap.newKeySet();
+    private static final ExecutorService PREWARM_EXECUTOR = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "phaze-cosmetics-prewarm");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    /** Queues CPU-only decode/parse of catalog assets off the render thread. */
+    public static void prewarmCatalog(List<String> selections) {
+        for (String selection : selections) {
+            if (selection == null || selection.isBlank()) continue;
+            String normalized = selection.toLowerCase(Locale.ROOT);
+            if (!PREWARM_IN_FLIGHT.add(normalized)) continue;
+            PREWARM_EXECUTOR.execute(() -> {
+                try {
+                    prewarmOne(selection);
+                } catch (Throwable error) {
+                    LOG.debug("Cosmetic prewarm skipped for '{}'", selection, error);
+                } finally {
+                    PREWARM_IN_FLIGHT.remove(normalized);
+                }
+            });
+        }
+    }
+
+    private static void prewarmOne(String selection) throws Exception {
+        CosmeticsState.CosmeticEntry entry = CosmeticsState.getInstance().resolveEntry(selection);
+        if (entry == null) return;
+        Path file = entry.file().toAbsolutePath().normalize();
+        long stamp = Files.getLastModifiedTime(file).toMillis();
+        if (CosmeticsState.isCape(selection)) {
+            if (isCapeCached(file, stamp)) return;
+            List<DecodedCapeFrame> decoded = isGif(file) ? readGifFrames(file) : readStaticCapeFrame(file);
+            if (decoded.isEmpty()) return;
+            PrewarmedCape previous = PREWARMED_CAPES.put(file, new PrewarmedCape(file, stamp, decoded));
+            if (previous != null) closeDecoded(previous.frames());
+        } else {
+            String variant = entry.textureVariant() == null ? "" : entry.textureVariant();
+            ModelKey key = new ModelKey(file, variant, CosmeticsState.typeOf(selection));
+            if (isModelCached(key, stamp)) return;
+            BlockbenchWingModel loaded = BlockbenchWingModel.load(file, variant, key.type());
+            PrewarmedModel previous = PREWARMED_MODELS.put(key, new PrewarmedModel(key, stamp, loaded));
+            // Prewarmed models own no GL buffers yet, so close() is CPU-only.
+            if (previous != null) previous.model().close();
+        }
+    }
+
+    private static synchronized boolean isModelCached(ModelKey key, long stamp) {
+        CachedModel cached = MODELS.get(key);
+        if (cached != null && cached.stamp == stamp) return true;
+        Long failed = FAILED_MODELS.get(key);
+        return failed != null && failed == stamp;
+    }
+
+    private static synchronized boolean isCapeCached(Path file, long stamp) {
+        CachedCape cached = CAPES.get(file);
+        return cached != null && cached.stamp() == stamp;
+    }
+
+    /**
+     * Render-thread handoff of prewarmed assets: texture registration and
+     * catalog VBO uploads. At most {@code budget} entries per call so a
+     * freshly opened page never spikes a single frame.
+     */
+    public static synchronized int uploadPrewarmed(int budget) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || budget <= 0) return 0;
+        int uploaded = 0;
+        for (ModelKey key : List.copyOf(PREWARMED_MODELS.keySet())) {
+            if (uploaded >= budget) break;
+            PrewarmedModel pre = PREWARMED_MODELS.remove(key);
+            if (pre == null) continue;
+            CachedModel existing = MODELS.get(key);
+            if (existing != null && existing.stamp == pre.stamp()) {
+                pre.model().close();
+                continue;
+            }
+            try {
+                pre.model().registerTextures(Integer.toUnsignedString(key.hashCode(), 16));
+                if (existing != null) existing.model.close();
+                MODELS.put(key, new CachedModel(pre.model(), pre.stamp(), System.nanoTime()));
+                FAILED_MODELS.remove(key);
+                uploaded++;
+            } catch (Throwable error) {
+                pre.model().close();
+                LOG.error("Failed to upload prewarmed cosmetic model {}", key.file(), error);
+            }
+        }
+        for (Path file : List.copyOf(PREWARMED_CAPES.keySet())) {
+            if (uploaded >= budget) break;
+            PrewarmedCape pre = PREWARMED_CAPES.remove(file);
+            if (pre == null) continue;
+            CachedCape existing = CAPES.get(file);
+            if (existing != null && existing.stamp() == pre.stamp()) {
+                closeDecoded(pre.frames());
+                continue;
+            }
+            try {
+                String token = Integer.toUnsignedString(file.toString().hashCode(), 16);
+                List<CapeFrame> frames = registerCapeFrames(client, token, pre.frames());
+                if (existing != null) existing.destroy(client);
+                CAPES.put(file, new CachedCape(frames, pre.stamp(), System.nanoTime()));
+                uploaded++;
+            } catch (Throwable error) {
+                closeDecoded(pre.frames());
+                LOG.error("Failed to upload prewarmed cape {}", file, error);
+            }
+        }
+        return uploaded;
+    }
+
+    /** Frees decoded-but-not-uploaded assets when the page closes early. */
+    public static synchronized void discardPrewarmed() {
+        for (PrewarmedModel pre : PREWARMED_MODELS.values()) pre.model().close();
+        PREWARMED_MODELS.clear();
+        for (PrewarmedCape pre : PREWARMED_CAPES.values()) closeDecoded(pre.frames());
+        PREWARMED_CAPES.clear();
+    }
+
+    private static void closeDecoded(List<DecodedCapeFrame> frames) {
+        for (DecodedCapeFrame frame : frames) frame.image().close();
+    }
+
+    private record PrewarmedModel(ModelKey key, long stamp, BlockbenchWingModel model) { }
+
+    private record PrewarmedCape(Path file, long stamp, List<DecodedCapeFrame> frames) { }
 
     private static final class CachedModel {
         private final BlockbenchWingModel model;

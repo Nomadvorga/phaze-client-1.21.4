@@ -12,7 +12,6 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -31,13 +30,10 @@ public final class CosmeticsState {
     public static final String NONE = "None";
     public static final String WIMGS = "Wimgs";
     public static final String FLUFFY_WINGS = "Fluffy Wings";
-    public static final String PHAZE_CAPE = "Phaze Cape";
     public static final String GOLDFISH_PET = "Goldfish Pet";
     public static final String BIRB_COMPANION = "Birb";
     public static final String TURTLE_HAT = "Turtle Pet";
-    public static final String PHAZE_CROWN_HAT = "Phaze Crown Hat";
     private static final List<BundledCape> BUNDLED_CAPES = List.of(
-            new BundledCape("Phaze Cape.png", "/assets/phaze/textures/cosmetics/phaze_cape.png"),
             new BundledCape("награда 15 лет+вишня.png", "/assets/phaze/cosmetics/capes/anniversary_cherry.png"),
             new BundledCape("Old Mogang Cape.png", "/assets/phaze/cosmetics/capes/old_mogang_cape.png"),
             new BundledCape("Unused Cape 1.png", "/assets/phaze/cosmetics/capes/unused_cape_1.png"),
@@ -81,12 +77,11 @@ public final class CosmeticsState {
 
     private String selectedWing = WIMGS;
     private String selectedCape = NONE;
-    private String selectedHat = PHAZE_CROWN_HAT;
+    private String selectedHat = NONE;
     private String selectedPet = NONE;
     private boolean wingEquipped = true;
     private boolean capeEquipped;
-    private boolean hatEquipped = true;
-    private boolean crownAutoEquipped;
+    private boolean hatEquipped;
     private boolean petEquipped;
     private boolean hideElytra = true;
     private float wingMotion = 5.5F;
@@ -311,6 +306,8 @@ public final class CosmeticsState {
             // older client version.
             Files.deleteIfExists(directory.resolve("Dreamy Snowy Fox Companion.zip"));
             Files.deleteIfExists(directory.resolve("Dreamy Fox Companion.zip"));
+            Files.deleteIfExists(directory.resolve("Phaze Cape.png"));
+            Files.deleteIfExists(directory.resolve("Phaze Crown Hat.bbmodel"));
         } catch (Throwable ignored) {
             // A read-only game directory must not prevent client startup.
         }
@@ -323,22 +320,15 @@ public final class CosmeticsState {
                 "Turtle Pet.zip",
                 "Maple Witch Hat.bbmodel",
                 "Hat Kid Collection.bbmodel",
-                "Violet Witch Hat.bbmodel",
-                "Phaze Crown Hat.bbmodel"
+                "Violet Witch Hat.bbmodel"
         )) {
             Path target = directory.resolve(fileName);
-            boolean refreshBundledCrown =
-                    PHAZE_CROWN_HAT.concat(".bbmodel").equalsIgnoreCase(fileName);
-            if (Files.isRegularFile(target) && !refreshBundledCrown) continue;
+            if (Files.isRegularFile(target)) continue;
             String resource = "/assets/phaze/cosmetics/models/" + fileName;
             try (InputStream input = CosmeticsState.class.getResourceAsStream(resource)) {
                 if (input == null) continue;
                 Files.createDirectories(directory);
-                if (refreshBundledCrown) {
-                    Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING);
-                } else {
-                    Files.copy(input, target);
-                }
+                Files.copy(input, target);
             } catch (Throwable ignored) {
                 // A read-only game directory should not prevent local models
                 // already present on disk from continuing to work.
@@ -346,17 +336,11 @@ public final class CosmeticsState {
         }
         for (BundledCape cape : BUNDLED_CAPES) {
             Path target = directory.resolve(cape.fileName());
-            boolean refreshBundledPhazeCape =
-                    "Phaze Cape.png".equalsIgnoreCase(cape.fileName());
-            if (Files.isRegularFile(target) && !refreshBundledPhazeCape) continue;
+            if (Files.isRegularFile(target)) continue;
             try (InputStream input = CosmeticsState.class.getResourceAsStream(cape.resource())) {
                 if (input == null) continue;
                 Files.createDirectories(directory);
-                if (refreshBundledPhazeCape) {
-                    Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING);
-                } else {
-                    Files.copy(input, target);
-                }
+                Files.copy(input, target);
             } catch (Throwable ignored) {
                 // Keep startup usable on read-only installations.
             }
@@ -371,12 +355,9 @@ public final class CosmeticsState {
         try {
             Path file = settingsFile();
             if (!Files.isRegularFile(file)) {
-                crownAutoEquipped = true;
                 return;
             }
             JsonObject object = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
-            crownAutoEquipped = object.has("crownAutoEquipped")
-                    && object.get("crownAutoEquipped").getAsBoolean();
             if (object.has("selectedWing") || object.has("selectedCape")) {
                 selectedWing = object.has("selectedWing") ? object.get("selectedWing").getAsString() : WIMGS;
                 selectedCape = object.has("selectedCape") ? object.get("selectedCape").getAsString() : NONE;
@@ -414,13 +395,15 @@ public final class CosmeticsState {
                 selectedPet = NONE;
                 petEquipped = false;
             }
-            if (!crownAutoEquipped) {
-                // One-time migration: put the newly bundled crown on the
-                // player's head without overriding later user choices.
-                selectedHat = PHAZE_CROWN_HAT;
-                hatEquipped = true;
-                crownAutoEquipped = true;
-                save();
+            // Retired cosmetics (Phaze Cape / Phaze Crown) and any model the
+            // user deleted must not stay equipped from an older settings file.
+            if (!NONE.equalsIgnoreCase(selectedHat) && !isAvailable(selectedHat)) {
+                selectedHat = NONE;
+                hatEquipped = false;
+            }
+            if (!NONE.equalsIgnoreCase(selectedCape) && !isAvailable(selectedCape)) {
+                selectedCape = NONE;
+                capeEquipped = false;
             }
         } catch (Throwable ignored) {
             // A malformed local preference file must never prevent startup.
@@ -439,7 +422,6 @@ public final class CosmeticsState {
             object.addProperty("wingEquipped", wingEquipped);
             object.addProperty("capeEquipped", capeEquipped);
             object.addProperty("hatEquipped", hatEquipped);
-            object.addProperty("crownAutoEquipped", crownAutoEquipped);
             object.addProperty("petEquipped", petEquipped);
             object.addProperty("hideElytra", hideElytra);
             object.addProperty("wingMotion", wingMotion);
@@ -549,7 +531,6 @@ public final class CosmeticsState {
     private static int catalogPriority(String name) {
         if (WIMGS.equalsIgnoreCase(name)) return 0;
         if (FLUFFY_WINGS.equalsIgnoreCase(name)) return 1;
-        if (PHAZE_CAPE.equalsIgnoreCase(name)) return 2;
         return 3;
     }
 
@@ -616,13 +597,11 @@ public final class CosmeticsState {
             return switch (lower) {
                 case "wimgs" -> "Angel Wings";
                 case "fluffy wings" -> "Fluffy Wings";
-                case "phaze cape" -> "Phaze Cape";
                 case "goldfish pet" -> "Goldfish";
                 case "birb" -> "Birb Companion";
                 case "turtle pet" -> "Turtle Hat";
                 case "maple witch hat" -> "Maple Witch Hat";
                  case "violet witch hat" -> "Violet Witch Hat";
-                 case "phaze crown hat" -> "Phaze Crown";
                 case "hat kid · kid's hat" -> "Kid's Hat";
                 case "hat kid · sprint hat" -> "Sprint Hat";
                 case "hat kid · brewing hat" -> "Brewing Hat";
@@ -669,13 +648,11 @@ public final class CosmeticsState {
         return switch (lower) {
             case "wimgs" -> "Ангельские крылья";
             case "fluffy wings" -> "Пушистые крылья";
-            case "phaze cape" -> "Плащ Phaze";
             case "goldfish pet" -> "Золотая рыбка";
             case "birb" -> "Птичка";
             case "turtle pet" -> "Черепашка";
             case "maple witch hat" -> "Шляпа ведьмы Мэйпл";
             case "violet witch hat" -> "Фиолетовая шляпа ведьмы";
-            case "phaze crown hat" -> "Корона Phaze";
             case "hat kid · kid's hat" -> "Шляпа Хэт Кид";
             case "hat kid · sprint hat" -> "Спринтерская шляпа";
             case "hat kid · brewing hat" -> "Зельеварская шляпа";

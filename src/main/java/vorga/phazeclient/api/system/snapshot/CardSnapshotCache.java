@@ -421,15 +421,21 @@ public final class CardSnapshotCache {
         int previousRead = GL11.glGetInteger(
                 GL30C.GL_READ_FRAMEBUFFER_BINDING
         );
+        // Center probe instead of a full-FBO readback: previews are centered,
+        // and a full glReadPixels stalls the GPU pipeline once per capture.
+        int readWidth = Math.min(snapshot.fbWidth, 32);
+        int readHeight = Math.min(snapshot.fbHeight, 32);
+        int readX = (snapshot.fbWidth - readWidth) / 2;
+        int readY = (snapshot.fbHeight - readHeight) / 2;
         ByteBuffer pixels = BufferUtils.createByteBuffer(
-                snapshot.fbWidth * snapshot.fbHeight * 4
+                readWidth * readHeight * 4
         );
         try {
             GlStateManager._glBindFramebuffer(
                     GL30C.GL_READ_FRAMEBUFFER, snapshot.fbo.fbo
             );
             GL11.glReadPixels(
-                    0, 0, snapshot.fbWidth, snapshot.fbHeight,
+                    readX, readY, readWidth, readHeight,
                     GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, pixels
             );
             for (int i = 3; i < pixels.capacity(); i += 4) {

@@ -80,6 +80,8 @@ public final class CosmeticsViewComponent extends AbstractComponent {
     private final Map<String, CardAnimations> cardAnimations = new HashMap<>();
     private final Map<String, Object> catalogPreviewCacheKeys = new HashMap<>();
     private final Set<String> livePreviewFallback = new HashSet<>();
+    /** First-time snapshot captures allowed per frame; spreads scroll spikes. */
+    private int catalogCaptureBudget;
     private static final long PLAYER_PREVIEW_REFRESH_NS = 1_000_000_000L / 60L;
     private static final float PLAYER_PREVIEW_HALF_WIDTH = 170.0F;
     private static final float PLAYER_PREVIEW_ABOVE = 150.0F;
@@ -102,6 +104,13 @@ public final class CosmeticsViewComponent extends AbstractComponent {
         // Top-level pages switch instantly, like Mods/Settings/Configs.
         pageAnimation.setDirectionAndFinish(Direction.FORWARDS);
         CosmeticsState.getInstance().refreshCatalog();
+        // Decode/parse catalog assets off the render thread so scrolling
+        // never waits on a first-time model load or GIF decode.
+        List<String> prewarmIds = new ArrayList<>();
+        for (CosmeticsState.CosmeticEntry entry : CosmeticsState.getInstance().getCatalog()) {
+            prewarmIds.add(entry.name());
+        }
+        CosmeticsRenderer.prewarmCatalog(prewarmIds);
         catalogScroll = 0.0D;
         smoothedCatalogScroll = 0.0D;
         livePreviewFallback.clear();
@@ -119,6 +128,7 @@ public final class CosmeticsViewComponent extends AbstractComponent {
         draggingPreview = false;
         draggingMotion = false;
         draggingPetFollow = false;
+        CosmeticsRenderer.discardPrewarmed();
     }
 
     public boolean isOpen() {
@@ -132,6 +142,10 @@ public final class CosmeticsViewComponent extends AbstractComponent {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         if (!shouldRender()) return;
+
+        // Hand prewarmed (background-decoded) assets to the GL side a couple
+        // at a time; keeps first-open frames free of upload spikes.
+        CosmeticsRenderer.uploadPrewarmed(2);
 
         float inheritedAlpha = globalAlpha;
         globalAlpha *= pageAnimation.getOutputFloat();
@@ -287,6 +301,7 @@ public final class CosmeticsViewComponent extends AbstractComponent {
         // the remaining 400 -> 200 FPS regression; subsequent frames are now
         // one cheap textured quad per visible card.
         BatchedRectangle.flushIfBatching();
+        catalogCaptureBudget = 2;
         for (VisibleCard card : visibleCards) {
             if (!card.available) continue;
             renderCatalogModelPreview(
@@ -413,6 +428,10 @@ public final class CosmeticsViewComponent extends AbstractComponent {
         int visualHash = 31 * normalizedSelection.hashCode()
                 + CosmeticsState.typeOf(selection).ordinal();
         if (!snapshot.populated || snapshot.hash != visualHash) {
+            // Several synchronous captures + GPU readbacks in a single frame
+            // is what stuttered while scrolling; defer the rest to next frame.
+            if (catalogCaptureBudget <= 0) return;
+            catalogCaptureBudget--;
             boolean rendered = false;
             boolean captureCompleted = false;
             CardSnapshotCache.beginCapture(snapshot, previewW, previewH);
