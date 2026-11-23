@@ -118,6 +118,39 @@ public final class UiMsdfIconAtlas {
                 quadWidth, quadHeight, color, true);
     }
 
+    /**
+     * Matrix-stack ink fit for in-scene components. Fills {@code maxInkWidth} x
+     * {@code maxInkHeight} with the icon's visible shape (atlas cells carry
+     * padding, so fitting the cell makes small glyphs render smaller than the
+     * box the caller asked for) and centres that shape on the point.
+     *
+     * <p>Writes straight into the shared GUI batch, so it costs exactly one
+     * deferred quad like {@link #renderIcon} - no extra draw calls, no runtime
+     * texture work.</p>
+     */
+    public static boolean renderIconInkFitted(MatrixStack matrix, Identifier icon, float centerX, float centerY,
+                                              float maxInkWidth, float maxInkHeight, int color,
+                                              float thickness, float smoothness) {
+        AtlasIcon atlasIcon = ensureIconReady(icon);
+        if (atlasIcon == null) {
+            return false;
+        }
+        float aspect = atlasIcon.aspectRatio > 0.0F ? atlasIcon.aspectRatio : 1.0F;
+        float scale = Math.min(maxInkWidth / Math.max(0.0001F, aspect * atlasIcon.ink.width()),
+                maxInkHeight / Math.max(0.0001F, atlasIcon.ink.height()));
+        return renderInkQuad(matrix.peek().getPositionMatrix(), atlasIcon, centerX, centerY,
+                Math.max(1.0F, scale * aspect), scale, color, thickness, smoothness);
+    }
+
+    private static boolean renderInkQuad(Matrix4f matrix, AtlasIcon atlasIcon, float centerX, float centerY,
+                                         float quadWidth, float quadHeight, int color,
+                                         float thickness, float smoothness) {
+        float x = centerX - quadWidth * atlasIcon.ink.centerX();
+        float y = centerY - quadHeight * atlasIcon.ink.centerY();
+        return renderQuad(matrix, atlasIcon, x, y, x + quadWidth, y + quadHeight,
+                color, false, thickness, smoothness);
+    }
+
     public static boolean renderIcon(
             DrawContext context,
             Identifier icon,

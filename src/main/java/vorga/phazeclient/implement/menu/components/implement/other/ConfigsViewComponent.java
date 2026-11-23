@@ -74,8 +74,17 @@ public class ConfigsViewComponent extends AbstractComponent {
     private static final float ACTIONS_TRAIL_PAD = 6.0F;
     private static final float ACTIONS_BOTTOM_PAD = 6.0F;
     /** One size for every meta glyph: size, modified time and cloud are
-     *  all square 24x24 sources, so they share a single optical weight. */
-    private static final float META_ICON_SIZE = 7.5F;
+     *  all square 24x24 sources, so they share a single optical weight.
+     *  This is the height of the visible *ink*, not the atlas cell: the
+     *  glyphs are ink-fitted, so at the menu's 2x overlay scale they land
+     *  on ~16 device pixels instead of the ~11 the padded cell produced. */
+    private static final float META_ICON_SIZE = 8.0F;
+    /** Tighter MSDF alpha ramp than the atlas default (0.42). The default
+     *  spreads the edge over ~1.7 screen pixels, which turns the 1.5-unit
+     *  strokes of these outline icons into gray mush once they are this
+     *  small; 0.30 keeps a full pixel of antialiasing but holds the peak
+     *  opacity, so the strokes stay crisp. Same shader, same quad count. */
+    private static final float META_ICON_SMOOTHNESS = 0.30F;
     private static final float META_ICON_GAP = 3.0F;
     private static final float META_GROUP_GAP = 8.0F;
 
@@ -390,10 +399,14 @@ public class ConfigsViewComponent extends AbstractComponent {
     private static float renderMetaChip(MatrixStack matrix, float startX, float centerY,
                                         Identifier icon, String label,
                                         int color, float iconSize) {
-        float iconY = centerY - iconSize * 0.5F;
-        UiMsdfIconAtlas.renderIcon(matrix, icon, startX, iconY, iconSize, iconSize, color);
+        // Ink-fitted: the visible shape (not the padded atlas cell) fills
+        // the icon box, so the glyph keeps its native 24x24 proportions at
+        // a full-size footprint and sits exactly on the row centre line.
+        UiMsdfIconAtlas.renderIconInkFitted(matrix, icon,
+                startX + iconSize * 0.5F, centerY,
+                iconSize, iconSize, color, 0.0F, META_ICON_SMOOTHNESS);
         float labelX = startX + iconSize + META_ICON_GAP;
-        float labelY = MenuStyle.centerMsdfTextY(META_SIZE, iconY, iconSize);
+        float labelY = MenuStyle.centerMsdfTextY(META_SIZE, centerY - iconSize * 0.5F, iconSize);
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), label, META_SIZE,
                 color,
