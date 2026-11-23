@@ -56,6 +56,14 @@ public class ConfigsViewComponent extends AbstractComponent {
     private static final float CARD_ICON_SIZE = 16.0F;
     private static final float NAME_SIZE = 7.0F;
     private static final float META_SIZE = 5.6F;
+    /** MSDF glyphs for the config cards. All five are baked from their
+     *  original 24x24 SVG sources, so the atlas hands back the real
+     *  proportions instead of a re-traced PNG approximation. */
+    private static final Identifier ICON_TIME = Identifier.of("phaze", "textures/configs/time.png");
+    private static final Identifier ICON_FILE = Identifier.of("phaze", "textures/configs/file.png");
+    private static final Identifier ICON_FILE_IMPORT = Identifier.of("phaze", "textures/configs/file_import.png");
+    private static final Identifier ICON_SIZE = Identifier.of("phaze", "textures/configs/size.png");
+    private static final Identifier ICON_CLOUD = Identifier.of("phaze", "textures/configs/cloud.png");
     /** Square inline action buttons (rename / share / delete), each with
      *  its own rounded-square plate so they read as three keys instead
      *  of one grouped strip. Hover-anim per (config, kind). */
@@ -65,12 +73,9 @@ public class ConfigsViewComponent extends AbstractComponent {
     private static final float ACTION_ICON_SIZE = 8.5F;
     private static final float ACTIONS_TRAIL_PAD = 6.0F;
     private static final float ACTIONS_BOTTOM_PAD = 6.0F;
-    /** Size of the inline meta icons (size, clock for last-modified,
-     *  cloud for imported). The cloud / clock icons are visually
-     *  lighter than the size icon, so they're rendered larger to
-     *  read at the same weight in the strip. */
-    private static final float META_ICON_SIZE = 6.5F;
-    private static final float META_ICON_SIZE_LARGE = 7.8F;
+    /** One size for every meta glyph: size, modified time and cloud are
+     *  all square 24x24 sources, so they share a single optical weight. */
+    private static final float META_ICON_SIZE = 7.5F;
     private static final float META_ICON_GAP = 3.0F;
     private static final float META_GROUP_GAP = 8.0F;
 
@@ -276,39 +281,43 @@ public class ConfigsViewComponent extends AbstractComponent {
         rowAnim.setDirection(hovered ? Direction.FORWARDS : Direction.BACKWARDS);
         float h = rowAnim.getOutputFloat();
 
-        // Active config gets the same green-tinted outline that an
-        // enabled module card uses (BORDER → CHIP_ACTIVE 75% mix);
-        // every other card keeps the standard BORDER outline. The
-        // per-card activeAnim tweens the mix factor so picking a config
-        // fades the highlight in instead of snapping.
+        // Active config tweens between the normal BORDER outline and
+        // the green-tinted cosmetics-style selection, so picking a
+        // config fades the highlight in instead of snapping.
         boolean isActive = name.equalsIgnoreCase(ConfigManager.getInstance().getCurrentConfigName());
         Animation activeAnim = activeAnims.computeIfAbsent(name,
                 k -> new DecelerateAnimation().setMs(300).setValue(1));
         activeAnim.setDirection(isActive ? Direction.FORWARDS : Direction.BACKWARDS);
         float activeT = activeAnim.getOutputFloat();
-        int baseOutline = MenuStyle.mix(MenuStyle.BORDER, MenuStyle.CHIP_ACTIVE, activeT * 0.75F);
-        int fill = MenuStyle.mix(MenuStyle.PANEL_CHIP, MenuStyle.CARD_OPTIONS, 0.30F + h * 0.10F);
-        int outline = MenuStyle.mix(baseOutline, MenuStyle.BORDER_LIGHT, h * 0.40F);
+
+        // Match the cosmetics card: CARD_BG fill, BORDER outline at 1.5px,
+        // brightening on hover. The active config keeps the green-tinted
+        // outline (BORDER_LIGHT → CHIP_ACTIVE) and gains the same extra
+        // 0.7px of stroke the cosmetics selection uses.
+        int selectedBorder = MenuStyle.mix(MenuStyle.BORDER_LIGHT, MenuStyle.CHIP_ACTIVE, 0.72F);
+        int outline = MenuStyle.mix(MenuStyle.BORDER, selectedBorder, activeT);
+        outline = MenuStyle.mix(outline, MenuStyle.BORDER_LIGHT, h * 0.55F);
+        int fill = MenuStyle.mix(MenuStyle.CARD_BG, MenuStyle.TEXT_PRIMARY, h * 0.10F);
         rectangle.render(ShapeProperties.create(matrix, cardX, cardY, cardW, CARD_HEIGHT)
-                .round(CARD_RADIUS).thickness(1.0F + activeT * 1.2F)
+                .round(CARD_RADIUS).thickness(1.5F + 0.7F * activeT)
                 .outlineColor(MenuStyle.withAlpha(outline, fadeAlpha))
                 .color(MenuStyle.withAlpha(fill, fadeAlpha * 0.92F))
                 .build());
 
-        // Type icon top-left. {@code file_import.png} for configs
-        // imported from a server share-key, {@code file.png} for
-        // locally created configs.
+        // Type icon top-left: the cloud-import document for configs
+        // received through a share key, the plain document for local
+        // ones. Both are the original 24x24 SVGs baked into the atlas.
         boolean imported = importedCache.getOrDefault(name, Boolean.FALSE);
-        String iconTexture = imported ? "textures/file_import.png" : "textures/file.png";
-        float iconWidth = resolveUiIconWidth(iconTexture, CARD_ICON_SIZE);
-        renderUiIcon(matrix, iconTexture, cardX + CARD_PAD, cardY + CARD_PAD,
-                iconWidth, CARD_ICON_SIZE,
+        UiMsdfIconAtlas.renderIcon(matrix, imported ? ICON_FILE_IMPORT : ICON_FILE,
+                cardX + CARD_PAD, cardY + CARD_PAD, CARD_ICON_SIZE, CARD_ICON_SIZE,
                 MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, fadeAlpha * 0.85F));
 
-        // Name beside the icon, meta strip (size + modified) under it.
+        // Name beside the icon, meta strip (size + modified / cloud)
+        // under it. The meta row is addressed by its centre line so the
+        // text and its glyph share one optical centre.
         float textX = cardX + CARD_PAD + CARD_ICON_SIZE + 6.0F;
         float nameY = cardY + CARD_PAD + 1.0F;
-        float metaY = nameY + NAME_SIZE + 4.0F;
+        float metaCenterY = nameY + NAME_SIZE + 5.5F;
         float nameMaxW = cardW - (textX - cardX) - CARD_PAD;
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), fitLabel(name, nameMaxW), NAME_SIZE,
@@ -318,7 +327,7 @@ public class ConfigsViewComponent extends AbstractComponent {
                 nameY,
                 0.0F
         );
-        renderRowMeta(matrix, cardX, textX, metaY, cardW, name, imported, fadeAlpha);
+        renderRowMeta(matrix, cardX, textX, metaCenterY, cardW, name, imported, fadeAlpha);
 
         // Three square action buttons bottom-right: rename → share →
         // delete. Each has its own plate, hover animation and hit-area.
@@ -339,97 +348,59 @@ public class ConfigsViewComponent extends AbstractComponent {
     }
 
     /**
-     * Bottom-line meta strip: size + (imported badge OR last-modified
-     * humanised). Each chip is an inline icon followed by a label,
-     * separated by a fixed gap so the strip layout stays predictable
-     * across different label widths.
+     * Bottom-line meta strip: size + (cloud badge OR last-modified
+     * humanised). Every chip is an MSDF glyph followed by a label, and
+     * the label is vertically centred on its glyph.
      */
-    private void renderRowMeta(MatrixStack matrix, float cardX, float textX, float metaY,
+    private void renderRowMeta(MatrixStack matrix, float cardX, float textX, float metaCenterY,
                                float cardW, String configName, boolean imported, float fadeAlpha) {
         int metaColor = MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, fadeAlpha * 0.95F);
         String sizeLabel = sizeCache.getOrDefault(configName, "—");
+        // Imported configs read just "облако" / "Cloud" next to the
+        // cloud glyph; the icon already carries the meaning.
         String modifiedLabel = imported
-                ? Lang.translate("Imported from cloud")
+                ? Lang.translate("Cloud")
                 : relativeModifiedCache.getOrDefault(configName, "—");
-        String modifiedIcon = imported ? "textures/cloud.png" : "textures/clock.png";
+        Identifier modifiedIcon = imported ? ICON_CLOUD : ICON_TIME;
 
         // The strip normally aligns with the name. On narrow cards it
-        // falls back to the full card width, and the imported label
-        // shortens, so nothing ever runs past the card's right edge.
+        // falls back to the full card width so nothing runs past the
+        // card's right edge.
         float startX = textX;
         float available = cardX + cardW - CARD_PAD - startX;
-        float total = metaChipWidth("textures/size.png", sizeLabel, META_ICON_SIZE)
-                + META_GROUP_GAP
-                + metaChipWidth(modifiedIcon, modifiedLabel, META_ICON_SIZE_LARGE);
+        float total = metaChipWidth(sizeLabel) + META_GROUP_GAP + metaChipWidth(modifiedLabel);
         if (total > available) {
             startX = cardX + CARD_PAD;
-            available = cardW - CARD_PAD * 2.0F;
-        }
-        if (imported && total > available) {
-            modifiedLabel = Lang.RU.equals(Lang.getActive()) ? "Из облака" : "From cloud";
         }
 
-        // Size chip - dedicated size.png icon, tinted with the same
-        // muted text colour so it reads as part of the meta strip
-        // instead of standing out as a stray accent. The icon carries
-        // the meaning, so the label stays short (value only).
-        float cursorX = renderMetaChip(matrix, startX, metaY,
-                "textures/size.png",
-                sizeLabel,
-                metaColor, fadeAlpha, 1.0F, META_ICON_SIZE);
+        float cursorX = renderMetaChip(matrix, startX, metaCenterY,
+                ICON_SIZE, sizeLabel, metaColor, META_ICON_SIZE);
         cursorX += META_GROUP_GAP;
-
-        // Modified chip - clock icon + short relative label
-        // ("Сегодня, 03:32" / "1 день назад"); imported configs swap it
-        // for the cloud marker so remote-origin entries spot at a glance.
-        renderMetaChip(matrix, cursorX, metaY,
-                modifiedIcon,
-                modifiedLabel,
-                metaColor, fadeAlpha, 1.5F, META_ICON_SIZE_LARGE);
+        renderMetaChip(matrix, cursorX, metaCenterY,
+                modifiedIcon, modifiedLabel, metaColor, META_ICON_SIZE);
     }
 
-    private float metaChipWidth(String iconTexture, String label, float iconSize) {
-        return resolveUiIconWidth(iconTexture, iconSize) + META_ICON_GAP
+    private static float metaChipWidth(String label) {
+        return META_ICON_SIZE + META_ICON_GAP
                 + MsdfFonts.bold().getWidth(label, META_SIZE);
     }
 
-    /** Renders one icon+label chip and returns the x coordinate
-     *  immediately after the label, so the caller can append the
-     *  next chip with a fixed group gap. {@code labelDeltaY} nudges
-     *  the text vertically without moving the icon - useful when an
-     *  icon is asymmetrically weighted in its bbox. {@code iconSize}
-     *  picks between the standard 6.5px rendering and the 1.5×
-     *  oversized variant for the cloud / clock glyphs. */
-    private float renderMetaChip(MatrixStack matrix, float startX, float baselineY,
-                                 String iconTexture, String label,
-                                 int color, float fadeAlpha,
-                                 float labelDeltaY, float iconSize) {
-        float iconWidth = resolveUiIconWidth(iconTexture, iconSize);
-        float iconY = baselineY + (META_SIZE - iconSize) * 0.5F + 0.4F;
-        renderUiIcon(matrix, iconTexture, startX, iconY, iconWidth, iconSize, color);
-        float labelX = startX + iconWidth + META_ICON_GAP;
+    /** Renders one icon+label chip with both centred on {@code centerY}
+     *  and returns the x coordinate immediately after the label. */
+    private static float renderMetaChip(MatrixStack matrix, float startX, float centerY,
+                                        Identifier icon, String label,
+                                        int color, float iconSize) {
+        float iconY = centerY - iconSize * 0.5F;
+        UiMsdfIconAtlas.renderIcon(matrix, icon, startX, iconY, iconSize, iconSize, color);
+        float labelX = startX + iconSize + META_ICON_GAP;
+        float labelY = MenuStyle.centerMsdfTextY(META_SIZE, iconY, iconSize);
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), label, META_SIZE,
                 color,
                 matrix.peek().getPositionMatrix(),
-                labelX, baselineY + labelDeltaY, 0.0F
+                labelX, labelY, 0.0F
         );
         return labelX + MsdfFonts.bold().getWidth(label, META_SIZE);
-    }
-
-    private float resolveUiIconWidth(String iconTexture, float iconHeight) {
-        float aspectRatio = UiMsdfIconAtlas.resolveAspectRatio(Identifier.ofVanilla(iconTexture));
-        return iconHeight * Math.max(0.0001F, aspectRatio);
-    }
-
-    private void renderUiIcon(MatrixStack matrix, String iconTexture, float x, float y, float width, float height, int color) {
-        // Image.render still uses the legacy swapped width/height convention,
-        // so pass the box dimensions in that order to keep non-square icons
-        // aligned without stretching in Configs rows.
-        image.setTexture(iconTexture)
-                .render(ShapeProperties.create(matrix, x, y, height, width)
-                        .color(color)
-                        .build());
     }
 
     private String humanReadableSize(long bytes) {

@@ -880,6 +880,7 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Hunger", "Голод");
         SETTING_TRANSLATIONS.put("Hunger Threshold", "Порог голода");
         SETTING_TRANSLATIONS.put("Impact Marker", "Маркер попадания");
+        SETTING_TRANSLATIONS.put("Cloud", "облако");
         SETTING_TRANSLATIONS.put("Imported from cloud", "Импортировано из облака");
         SETTING_TRANSLATIONS.put("In Range Color", "Цвет в радиусе");
         SETTING_TRANSLATIONS.put("Base color of the circle. In Filled mode, this alpha controls fill opacity.", "Базовый цвет круга. В режиме Filled его альфа управляет прозрачностью заливки.");
