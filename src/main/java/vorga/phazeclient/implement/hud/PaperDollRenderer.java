@@ -130,7 +130,7 @@ public final class PaperDollRenderer {
 
             matrices.push();
             try {
-                matrices.translate(feetX, feetY, 50.0F);
+                matrices.translate(feetX, feetY, HudStyle.PAPER_DOLL_RENDER_Z);
                 matrices.scale(size, size, -size);
                 TILT.rotationX(-tilt * 20.0F * RADIANS);
                 ORIENTATION.rotationZ((float) Math.PI).mul(TILT);

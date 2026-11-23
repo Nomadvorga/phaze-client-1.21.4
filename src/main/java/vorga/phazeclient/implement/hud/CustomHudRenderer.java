@@ -4291,13 +4291,18 @@ public final class CustomHudRenderer {
 
         if (chatEditing && handleInput && RECT_HOVER_PROGRESS[hudIndex] > 0.05F) {
             int outlineColor = withAlpha(0xFFFFFF, (int) (165.0F * RECT_HOVER_PROGRESS[hudIndex]));
+            // The model now renders above every HUD layer; keep its editor
+            // outline in front of the model so hovering stays readable.
+            context.getMatrices().push();
+            context.getMatrices().translate(0.0F, 0.0F, PAPER_DOLL_EDITOR_Z);
             drawOuterOutline(context, hoverX, panelY, hoverW, panelH, 1, outlineColor);
+            context.getMatrices().pop();
         }
 
         boolean showResizeHandle = chatEditing && handleInput && (RECT_RESIZING[hudIndex] || hoveredHandle || hoveredHud || nearHud);
         if (showResizeHandle) {
             context.getMatrices().push();
-            context.getMatrices().translate(0.0F, 0.0F, HANDLE_RENDER_Z);
+            context.getMatrices().translate(0.0F, 0.0F, PAPER_DOLL_EDITOR_Z);
             int hX = Math.round(handleX);
             int hY = Math.round(handleY);
             int handleColor = RECT_RESIZING[hudIndex] ? withAlpha(0xFFFFFF, 255) : HANDLE_COLOR;
