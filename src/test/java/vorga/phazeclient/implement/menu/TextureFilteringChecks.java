@@ -147,7 +147,8 @@ public final class TextureFilteringChecks {
         String[] required = {
                 "length(vec2(dFdx(distance), dFdy(distance)))",
                 "float shapeCoverage = 1.0 - smoothstep(-halfAa, halfAa, distance);",
-                "float fillCoverage = 1.0 - smoothstep(-thickness - halfAa, -thickness + halfAa, distance);",
+                "float strokeWidth = max(thickness - aa, 0.0);",
+                "float fillCoverage = 1.0 - smoothstep(-strokeWidth - halfAa, -strokeWidth + halfAa, distance);",
                 "float borderCoverage = max(shapeCoverage - fillCoverage, 0.0);"
         };
         for (String fragment : required) {

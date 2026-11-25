@@ -46,7 +46,11 @@ void main() {
     float aa = max(max(distanceAA, softness), 1.0E-4);
     float halfAa = aa * 0.5;
     float shapeCoverage = 1.0 - smoothstep(-halfAa, halfAa, distance);
-    float fillCoverage = 1.0 - smoothstep(-thickness - halfAa, -thickness + halfAa, distance);
+    // Thickness includes the anti-aliased edge itself.  The old shader's
+    // 1px/1.2px settings must not become a visibly wider band just because
+    // the new SDF coverage is uniform around corners.
+    float strokeWidth = max(thickness - aa, 0.0);
+    float fillCoverage = 1.0 - smoothstep(-strokeWidth - halfAa, -strokeWidth + halfAa, distance);
     float borderCoverage = max(shapeCoverage - fillCoverage, 0.0);
 
     // Composite disjoint fill/outline coverage, preserving transparent fills

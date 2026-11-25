@@ -77,7 +77,10 @@ vec4 shadeRect() {
     float aa = max(max(distanceAA, softness), 1.0E-4);
     float halfAa = aa * 0.5;
     float shapeCoverage = 1.0 - smoothstep(-halfAa, halfAa, distance);
-    float fillCoverage = 1.0 - smoothstep(-thickness - halfAa, -thickness + halfAa, distance);
+    // Thickness includes the anti-aliased edge itself, preserving the old
+    // visual width while the SDF keeps that width uniform around corners.
+    float strokeWidth = max(thickness - aa, 0.0);
+    float fillCoverage = 1.0 - smoothstep(-strokeWidth - halfAa, -strokeWidth + halfAa, distance);
     float borderCoverage = max(shapeCoverage - fillCoverage, 0.0);
     float borderAlpha = vOutlineColor.a * borderCoverage;
     float fillAlpha = vColor.a * max(shapeCoverage - borderAlpha, 0.0);
