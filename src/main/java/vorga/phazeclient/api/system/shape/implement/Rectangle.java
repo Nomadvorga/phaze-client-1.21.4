@@ -60,7 +60,7 @@ public class Rectangle implements Shape, QuickImports {
         Vector3f size = matrix4f.getScale(scratchSize).mul(scale);
         Vector4f round = scratchRound.set(shape.getRound()).mul(size.y);
 
-        float softness = shape.getSoftness();
+        float softness = Math.max(0.0F, shape.getSoftness());
         float thickness = shape.getThickness();
         float width = shape.getWidth() * size.x;
         float height = shape.getHeight() * size.y;
@@ -90,7 +90,12 @@ public class Rectangle implements Shape, QuickImports {
         // Resolve shader and all uniforms before reserving tessellator memory.
         BufferBuilder buffer = Render2DBuffers.begin(VertexFormats.POSITION);
         try {
-            drawEngine.quad(matrix4f, buffer, shape.getX() - softness / 2, shape.getY() - softness / 2, shape.getWidth() + softness, shape.getHeight() + softness);
+            // Match the batched SDF quad's framebuffer-space AA padding.
+            float pixelScale = Math.max(1.0E-4F, Math.min(Math.abs(size.x), Math.abs(size.y)));
+            float geometryPad = Math.max(softness, Math.max(1.0F, softness) / pixelScale);
+            drawEngine.quad(matrix4f, buffer, shape.getX() - geometryPad / 2.0F,
+                    shape.getY() - geometryPad / 2.0F, shape.getWidth() + geometryPad,
+                    shape.getHeight() + geometryPad);
             try (BuiltBuffer built = buffer.end()) {
                 BufferRenderer.drawWithGlobalProgram(built);
             }

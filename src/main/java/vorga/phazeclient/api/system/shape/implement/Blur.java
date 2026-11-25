@@ -33,6 +33,7 @@ import vorga.phazeclient.api.system.hud.HudBlurPlanner;
 import vorga.phazeclient.api.system.hud.Render2DState;
 import vorga.phazeclient.api.system.hud.Render2DBuffers;
 import vorga.phazeclient.implement.features.modules.client.Theme;
+import vorga.phazeclient.implement.features.modules.client.Settings;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -337,7 +338,7 @@ public class Blur implements Shape {
         if (!prepare2DFramebuffers(client, false, false)) {
             return;
         }
-        Theme theme = Theme.getInstance();
+        Settings theme = Theme.getInstance();
         float blurRadius = Math.max(0.0F, shape.getQuality()) * theme.getHudBlurRadiusMultiplier();
         BlurRegion blurRegion = computeHudGaussianRegion(client, shape, blurRadius);
         long now = System.nanoTime();
@@ -509,7 +510,7 @@ public class Blur implements Shape {
         RenderSystem.setShaderTexture(1, nametagInput.getColorAttachment());
         ShaderProgram shader = RenderSystem.setShader(MASK_SHADER_KEY);
         if (shader != null) {
-            Theme theme = Theme.getInstance();
+            Settings theme = Theme.getInstance();
             int blurMode = theme.getHudBlurMode();
             shader.getUniformOrDefault("Size").set(Math.max(1.0f, width), Math.max(1.0f, height));
             shader.getUniformOrDefault("Radius").set(ZERO_ROUND);
@@ -861,7 +862,7 @@ public class Blur implements Shape {
             return null;
         }
 
-        Theme theme = Theme.getInstance();
+        Settings theme = Theme.getInstance();
         int blurMode = theme.getHudBlurMode();
         float blurRadius = Math.max(0.0F, shape.getQuality()) * theme.getHudBlurRadiusMultiplier();
         float hudGaussianRadius = blurRadius * HUD_GAUSSIAN_STRENGTH_MULTIPLIER;
@@ -903,7 +904,7 @@ public class Blur implements Shape {
         if (client == null || shapes == null || shapes.isEmpty() || !cacheFrameReadyForHud()) {
             return null;
         }
-        Theme theme = Theme.getInstance();
+        Settings theme = Theme.getInstance();
         if (theme == null || theme.getHudBlurMode() != 2) {
             return null;
         }

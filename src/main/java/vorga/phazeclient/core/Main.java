@@ -27,7 +27,7 @@ import vorga.phazeclient.implement.features.modules.hud.NametagHud;
 import vorga.phazeclient.implement.features.modules.hud.MemoryHud;
 import vorga.phazeclient.implement.features.modules.hud.ComboCounterHud;
 import vorga.phazeclient.implement.features.modules.hud.WailaHud;
-import vorga.phazeclient.implement.features.modules.client.Theme;
+import vorga.phazeclient.implement.features.modules.client.Settings;
 import vorga.phazeclient.implement.features.modules.other.AutoSprint;
 import vorga.phazeclient.implement.features.modules.other.TimeChanger;
 import vorga.phazeclient.implement.features.modules.other.WeatherChanger;
@@ -62,8 +62,8 @@ public class Main implements ModInitializer {
     public void onInitialize() {
         HolyWorldFeatureControlService.getInstance().init();
 
-        if (moduleProvider.get(Theme.class) == null) {
-            moduleProvider.getModules().add(Theme.getInstance());
+        if (moduleProvider.get(Settings.class) == null) {
+            moduleProvider.getModules().add(Settings.getInstance());
         }
         if (moduleProvider.get(TimeChanger.class) == null) {
             moduleProvider.getModules().add(TimeChanger.getInstance());

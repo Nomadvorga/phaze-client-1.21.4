@@ -57,24 +57,32 @@ public class ScissorManager implements QuickImports {
     }
 
     private void setScissor(Scissor scissor) {
-        int scaleFactor = (int) window().getScaleFactor();
-        int x = scissor.x * scaleFactor;
-        int y = window().getHeight() - (scissor.y * scaleFactor + scissor.height * scaleFactor);
-        int width = scissor.width * scaleFactor;
-        int height = scissor.height * scaleFactor;
+        double scaleFactor = window().getScaleFactor();
+        // Round the transformed endpoints outward in framebuffer pixels.
+        // Rounding GUI-space origin and size separately before multiplying
+        // can move a half-pixel viewport inward (the config sidebar starts
+        // at y + 42.5), cutting the first row and other rounded edges.
+        int left = (int) Math.floor(scissor.x * scaleFactor);
+        int right = (int) Math.ceil((scissor.x + scissor.width) * scaleFactor);
+        int top = (int) Math.floor(scissor.y * scaleFactor);
+        int bottom = (int) Math.ceil((scissor.y + scissor.height) * scaleFactor);
+        int x = left;
+        int y = window().getHeight() - bottom;
+        int width = Math.max(0, right - left);
+        int height = Math.max(0, bottom - top);
 
         RenderSystem.enableScissor(x, y, width, height);
     }
 
     private static class Scissor {
-        public int x, y;
-        public int width, height;
+        public double x, y;
+        public double width, height;
 
         public void set(double x, double y, double width, double height) {
-            this.x = Math.max(0, (int) Math.round(x));
-            this.y = Math.max(0, (int) Math.round(y));
-            this.width = Math.max(0, (int) Math.round(width));
-            this.height = Math.max(0, (int) Math.round(height));
+            this.x = Math.max(0.0, x);
+            this.y = Math.max(0.0, y);
+            this.width = Math.max(0.0, width);
+            this.height = Math.max(0.0, height);
         }
 
         Scissor copy() {

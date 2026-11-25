@@ -46,7 +46,8 @@ public final class UiMsdfIconAtlas {
     /** Visible chevron height in back_arrow.svg as a fraction of its 24-unit box, the PNG's size convention. */
     private static final float BACK_ARROW_INK_HEIGHT = 14.7972F / 24.0F;
     private static final float DEFAULT_DISTANCE_RANGE = 12.0F;
-    private static final float SMOOTHNESS = 0.42F;
+    /** Keep small, thin MSDF icons crisp; callers may request a tighter ramp, never a softer one. */
+    private static final float ICON_SMOOTHNESS = 0.30F;
     private static final float THICKNESS = 0.0F;
     private static final float UV_INSET = 1.0F;
 
@@ -161,7 +162,7 @@ public final class UiMsdfIconAtlas {
             int color,
             boolean precise
     ) {
-        return renderIcon(context, icon, x, y, width, height, color, precise, THICKNESS, SMOOTHNESS);
+        return renderIcon(context, icon, x, y, width, height, color, precise, THICKNESS, ICON_SMOOTHNESS);
     }
 
     public static boolean renderIcon(
@@ -214,7 +215,7 @@ public final class UiMsdfIconAtlas {
             return false;
         }
         FittedRect fittedRect = fitRect(x, y, Math.max(1.0F, width), Math.max(1.0F, height), atlasIcon.aspectRatio);
-        return renderQuad(matrix.peek().getPositionMatrix(), atlasIcon, fittedRect.left, fittedRect.top, fittedRect.right, fittedRect.bottom, color, true, THICKNESS, SMOOTHNESS);
+        return renderQuad(matrix.peek().getPositionMatrix(), atlasIcon, fittedRect.left, fittedRect.top, fittedRect.right, fittedRect.bottom, color, true, THICKNESS, ICON_SMOOTHNESS);
     }
 
     public static boolean renderIcon(
@@ -237,7 +238,7 @@ public final class UiMsdfIconAtlas {
         float drawWidth = precise ? Math.max(1.0F, width) : Math.max(1.0F, Math.round(width));
         float drawHeight = precise ? Math.max(1.0F, height) : Math.max(1.0F, Math.round(height));
         FittedRect fittedRect = fitRect(x1, y1, drawWidth, drawHeight, atlasIcon.aspectRatio);
-        return renderQuad(matrix, atlasIcon, fittedRect.left, fittedRect.top, fittedRect.right, fittedRect.bottom, color, false, THICKNESS, SMOOTHNESS);
+        return renderQuad(matrix, atlasIcon, fittedRect.left, fittedRect.top, fittedRect.right, fittedRect.bottom, color, false, THICKNESS, ICON_SMOOTHNESS);
     }
 
     private static synchronized boolean ensureAtlasLoaded() {
@@ -416,13 +417,14 @@ public final class UiMsdfIconAtlas {
             float thickness,
             float smoothness
     ) {
+        float iconSmoothness = Math.min(smoothness, ICON_SMOOTHNESS);
         if (!filterApplied && atlasTexture != null) {
             atlasTexture.setFilter(true, false);
             filterApplied = true;
         }
 
         if (atlasTexture != null && MsdfBatch.canDefer()) {
-            GuiBatch.Run run = MsdfBatch.beginIcon(atlasTexture.getGlId(), distanceRange, thickness, smoothness);
+            GuiBatch.Run run = MsdfBatch.beginIcon(atlasTexture.getGlId(), distanceRange, thickness, iconSmoothness);
             // Same corner-to-UV mapping as emitQuad; the legacy orientation is a quarter turn.
             if (legacyImageOrientation) {
                 run.quad(matrix, x1, y1, x2 - x1, y2 - y1, 0.0F,
@@ -446,7 +448,7 @@ public final class UiMsdfIconAtlas {
         if (shader != null) {
             shader.getUniform("Range").set(distanceRange);
             shader.getUniform("Thickness").set(thickness);
-            shader.getUniform("Smoothness").set(smoothness);
+            shader.getUniform("Smoothness").set(iconSmoothness);
             shader.getUniform("Outline").set(0);
             shader.getUniform("OutlineThickness").set(0.0F);
             shader.getUniform("OutlineColor").set(0.0F, 0.0F, 0.0F, 0.0F);

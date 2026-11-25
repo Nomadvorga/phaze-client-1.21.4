@@ -15,6 +15,7 @@ import vorga.phazeclient.implement.menu.components.AbstractComponent;
 @RequiredArgsConstructor
 public abstract class AbstractSettingComponent extends AbstractComponent {
     public static final float ROW_HEIGHT = 23.5F;
+    private static final float CARD_OUTLINE_THICKNESS = 1.2F;
     {
         height = ROW_HEIGHT;
     }
@@ -91,7 +92,7 @@ public abstract class AbstractSettingComponent extends AbstractComponent {
         rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, width, height)
                 .round(4)
                 .softness(1.12F)
-                .thickness(1.2F)
+                .thickness(CARD_OUTLINE_THICKNESS)
                 .outlineColor(outline)
                 .color(background)
                 .build());

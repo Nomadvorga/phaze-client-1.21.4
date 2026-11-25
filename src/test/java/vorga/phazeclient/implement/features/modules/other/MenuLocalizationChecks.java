@@ -6,6 +6,8 @@ import vorga.phazeclient.api.feature.module.setting.Setting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SelectSetting;
 import vorga.phazeclient.base.util.Lang;
+import vorga.phazeclient.implement.features.modules.client.Settings;
+import vorga.phazeclient.implement.menu.MenuUiSettings;
 
 import java.util.List;
 
@@ -16,9 +18,10 @@ public final class MenuLocalizationChecks {
     public static void main(String[] args) {
         String previousLocale = Lang.getActive();
         try {
+            Settings settings = Settings.getInstance();
             for (String locale : new String[]{Lang.EN, Lang.RU}) {
                 Lang.setActive(locale);
-                for (String title : new String[]{"Pack Organizer", "Low HP Warning", "Auto Eat", "Custom Glint", "3D Skins", "Kill Sounds", "Themes"}) {
+                for (String title : new String[]{"Pack Organizer", "Low HP Warning", "Auto Eat", "Custom Glint", "3D Skins", "Kill Sounds", "Settings"}) {
                     Module module = new Module("test_module", title, ModuleCategory.OTHER);
                     check(module.getLocalizedName().equals(title), "module title stays English: " + title);
                     check(module.getVisibleName().equals(title), "canonical title unchanged");
@@ -27,8 +30,26 @@ public final class MenuLocalizationChecks {
                 for (ModuleCategory category : ModuleCategory.values()) {
                     check(category.getReadableName().equals(category.name()), "top-level GUI tab stays English");
                 }
+                check(settings.getName().equals("themes") && settings.getIdentifier().equals("themes")
+                                && settings.getVisibleName().equals("Settings"),
+                        "Settings keeps the legacy themes module ID and canonical visible title");
+                String expectedSettingsDescription = locale.equals(Lang.RU)
+                        ? "Настройки темы интерфейса, масштаба, языка, размытия и экрана загрузки"
+                        : "GUI themes, scale, language, blur, and loading screen settings";
+                check(settings.getDisplayDescription().equals(expectedSettingsDescription),
+                        "Settings description follows the active locale");
             }
             Lang.setActive(Lang.RU);
+            check(settings.customLoadingScreen.getName().equals("Своя заставка загрузки"),
+                    "custom loading setting label is localized");
+            check(settings.customLoadingScreen.getDescription().equals(
+                            "Использовать заставку Phaze вместо стандартного экрана загрузки Minecraft"),
+                    "custom loading setting description is localized");
+            check(settings.customLoadingScreen.isValue() && MenuUiSettings.isCustomLoadingScreenEnabled(),
+                    "custom loading and bootstrap-safe state default to enabled");
+            settings.customLoadingScreen.setValue(false);
+            check(!MenuUiSettings.isCustomLoadingScreenEnabled(), "setting change updates bootstrap-safe state");
+            settings.customLoadingScreen.setValue(true);
             check(new SectionSetting("General").getName().equals("Общие"), "section inside settings is translated");
             SelectSetting mode = new SelectSetting("Mode", "Glint color mode")
                     .value("Custom", "Rainbow", "Turquoise", "Golden", "Ruby").selected("Turquoise");

@@ -13,6 +13,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import vorga.phazeclient.implement.menu.loading.BootstrapLoadingRenderer;
+import vorga.phazeclient.implement.menu.MenuUiSettings;
 
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -29,6 +30,7 @@ public abstract class SplashOverlayMixin {
     @Inject(method = "render(Lnet/minecraft/client/gui/DrawContext;IIF)V",
             at = @At("HEAD"), cancellable = true, require = 1)
     private void phaze$renderLoadingScreen(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+        if (!MenuUiSettings.isCustomLoadingScreenEnabled()) return;
         ci.cancel();
         long now = Util.getMeasuringTimeMs();
         if (reloadCompleteTime == -1L && reload.isComplete()) {

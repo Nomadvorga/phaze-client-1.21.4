@@ -4,7 +4,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.Identifier;
 import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.implement.config.ConfigManager;
-import vorga.phazeclient.implement.features.modules.client.Theme;
+import vorga.phazeclient.implement.features.modules.client.Settings;
 
 public final class MenuUiSettings {
     public static final int PANORAMA_SPEED_SCALE_VERSION = 3;
@@ -14,11 +14,12 @@ public final class MenuUiSettings {
     public static final int MAX_GUI_FPS_LIMIT = 260;
     public static final float DEFAULT_GUI_SCALE = 1.0F;
     public static final float MIN_GUI_SCALE = 0.9F;
-    public static final float MAX_GUI_SCALE = 2.5F;
+    public static final float MAX_GUI_SCALE = 1.5F;
     public static final String DEFAULT_PANORAMA_PRESET_ID = "vanilla";
     public static final boolean DEFAULT_CUSTOM_MAIN_MENU_ENABLED = true;
 
     private static final MenuUiSettings INSTANCE = new MenuUiSettings();
+    private static volatile boolean customLoadingScreenEnabled = true;
 
     private double panoramaSpeed = DEFAULT_PANORAMA_SPEED;
     private int guiFpsLimit = DEFAULT_GUI_FPS_LIMIT;
@@ -58,6 +59,16 @@ public final class MenuUiSettings {
         return customMainMenuEnabled;
     }
 
+    /** Bootstrap-safe state: reading this never initializes the Settings module. */
+    public static boolean isCustomLoadingScreenEnabled() {
+        return customLoadingScreenEnabled;
+    }
+
+    /** Mirrors the persisted module setting into bootstrap-safe state. */
+    public static void syncCustomLoadingScreenEnabled(boolean enabled) {
+        customLoadingScreenEnabled = enabled;
+    }
+
     public void setPanoramaSpeed(double panoramaSpeed) {
         setPanoramaSpeedInternal(panoramaSpeed, true);
     }
@@ -68,7 +79,7 @@ public final class MenuUiSettings {
 
     public void setGuiScale(float guiScale) {
         this.guiScale = quantizeGuiScale(guiScale);
-        Theme.getInstance().syncGuiScale(this.guiScale);
+        Settings.getInstance().syncGuiScale(this.guiScale);
         ConfigManager.getInstance().markDirty();
     }
 
@@ -93,7 +104,7 @@ public final class MenuUiSettings {
         setPanoramaSpeedInternal(panoramaSpeed, false);
         setGuiFpsLimitInternal(guiFpsLimit, false);
         this.guiScale = quantizeGuiScale(guiScale);
-        Theme.getInstance().syncGuiScale(this.guiScale);
+        Settings.getInstance().syncGuiScale(this.guiScale);
         setCustomMainMenuEnabledInternal(customMainMenuEnabled, false);
     }
 
@@ -113,6 +124,7 @@ public final class MenuUiSettings {
 
     public void resetToDefaults() {
         applyConfig(DEFAULT_PANORAMA_SPEED, DEFAULT_GUI_FPS_LIMIT, DEFAULT_GUI_SCALE, DEFAULT_PANORAMA_PRESET_ID, DEFAULT_CUSTOM_MAIN_MENU_ENABLED);
+        customLoadingScreenEnabled = true;
     }
 
     private static float quantizeGuiScale(float value) {

@@ -66,24 +66,24 @@ vec4 shadeRect() {
     float softness = vShapeC.w;
 
     float distance = roundedBoxSDF(center, halfSize, vShapeB);
-    float smoothedAlpha = 1.0 - smoothstep(-1.0, thickness > 0.0 ? 1.0 : softness + 1.0, distance);
-    float smoothedBorderAlpha = 1.0 - smoothstep(-softness, softness, distance);
-    float borderAlpha = 1.0 - smoothstep(thickness - 2.0, thickness, abs(distance));
-
-    if (smoothedAlpha < 0.42 && thickness > 0.0) {
-        return vec4(vOutlineColor.rgb, vOutlineColor.a * smoothedBorderAlpha);
+    if (thickness <= 0.0) {
+        float fillCoverage = 1.0 - smoothstep(-1.0, softness + 1.0, distance);
+        return vec4(vColor.rgb, vColor.a * fillCoverage);
     }
-    vec4 basicColor = vec4(vColor.rgb, vColor.a * smoothedAlpha);
-    vec4 strokeColor = thickness > 0.0
-            ? vec4(vOutlineColor.rgb, vOutlineColor.a * borderAlpha)
-            : basicColor;
 
-    // Weight RGB by alpha before mixing: transparent fill RGB must not
-    // tint the outline or its AA fringe.
-    basicColor.rgb *= basicColor.a;
-    strokeColor.rgb *= strokeColor.a;
-    vec4 blended = mix(basicColor, strokeColor, borderAlpha) * smoothedAlpha;
-    return vec4(blended.a > 0.0 ? blended.rgb / blended.a : vec3(0.0), blended.a);
+    // Keep in sync with round.fsh: use a direction-independent AA ramp and
+    // one inward SDF stroke band, not the old symmetric abs(distance) band.
+    float distanceAA = length(vec2(dFdx(distance), dFdy(distance)));
+    float aa = max(max(distanceAA, softness), 1.0E-4);
+    float halfAa = aa * 0.5;
+    float shapeCoverage = 1.0 - smoothstep(-halfAa, halfAa, distance);
+    float fillCoverage = 1.0 - smoothstep(-thickness - halfAa, -thickness + halfAa, distance);
+    float borderCoverage = max(shapeCoverage - fillCoverage, 0.0);
+    float borderAlpha = vOutlineColor.a * borderCoverage;
+    float fillAlpha = vColor.a * max(shapeCoverage - borderAlpha, 0.0);
+    float outputAlpha = borderAlpha + fillAlpha;
+    vec3 premultiplied = vOutlineColor.rgb * borderAlpha + vColor.rgb * fillAlpha;
+    return vec4(outputAlpha > 0.0 ? premultiplied / outputAlpha : vec3(0.0), outputAlpha);
 }
 
 vec4 shadeMsdf(int slot, vec2 dx, vec2 dy, vec2 texelWidth) {

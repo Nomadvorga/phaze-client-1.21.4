@@ -13,6 +13,7 @@ import vorga.phazeclient.api.feature.module.setting.Setting;
 import vorga.phazeclient.api.feature.module.setting.implement.*;
 import vorga.phazeclient.implement.features.modules.hud.ArmorHud;
 import vorga.phazeclient.implement.features.modules.hud.BossBarHud;
+import vorga.phazeclient.implement.features.modules.client.Settings;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -67,8 +68,10 @@ public final class ConfigPersistenceChecks {
 
     private static void shapeAndImportedMarker(Path root) throws Exception {
         Fixture fixture = new Fixture();
+        Settings settingsModule = Settings.getInstance();
+        settingsModule.customLoadingScreen.setValue(false);
         ConfigManager manager = new ConfigManager(root.toFile(),
-                () -> List.of(fixture.module, BossBarHud.getInstance(), ArmorHud.getInstance()));
+                () -> List.of(fixture.module, settingsModule, BossBarHud.getInstance(), ArmorHud.getInstance()));
         Path target = manager.getConfigFile("default").toPath();
         manager.saveCurrentConfig();
         JsonObject saved = read(target);
@@ -88,6 +91,20 @@ public final class ConfigPersistenceChecks {
                 "all palette colors and selected index retained");
         check(settings.getAsJsonObject("Group").getAsJsonObject("Nested").get("Child").getAsBoolean(),
                 "nested groups serialize recursively");
+        JsonObject savedSettingsModule = saved.getAsJsonObject("modules").getAsJsonObject("themes");
+        check(savedSettingsModule.getAsJsonObject("settings").get("Custom Loading Screen").getAsBoolean() == false,
+                "Settings persists under the stable themes module ID");
+        settingsModule.customLoadingScreen.setValue(true);
+        manager.loadCurrentConfig();
+        check(!settingsModule.customLoadingScreen.isValue(), "custom loading setting restores from a config");
+        JsonObject oldShape = read(target);
+        oldShape.getAsJsonObject("modules").getAsJsonObject("themes")
+                .getAsJsonObject("settings").remove("Custom Loading Screen");
+        Files.writeString(target, oldShape.toString());
+        settingsModule.customLoadingScreen.setValue(false);
+        manager.loadCurrentConfig();
+        check(settingsModule.customLoadingScreen.isValue(),
+                "legacy themes configs without a loading-screen value use the enabled default");
         check(settings.getAsJsonObject("Item").keySet().equals(Set.of("active", "enabled", "highlightColor",
                 "itemId", "displayName", "matchName")) && !settings.get("EmptyItem").getAsBoolean(),
                 "active and inactive item-picker formats retained");

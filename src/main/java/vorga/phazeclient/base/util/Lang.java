@@ -17,7 +17,7 @@ import java.util.Map;
  * canonical (English) form regardless of locale.
  *
  * <p>Active locale is read from {@link
- * vorga.phazeclient.implement.features.modules.client.Theme#language}
+ * vorga.phazeclient.implement.features.modules.client.Settings#language}
  * which routes through SelectSetting + the standard config save
  * pipeline, so the choice survives restarts.
  */
@@ -764,7 +764,11 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("Stops the fog from going pitch-black when the camera is below world height. Inspired by SmoothSkies (MIT).", "Не даёт туману уходить в кромешную темноту, когда камера ниже мира. Вдохновлено SmoothSkies (MIT).");
         SETTING_TRANSLATIONS.put("Custom Mentions", "Кастомные упоминания");
         SETTING_TRANSLATIONS.put("Custom sky and cloud tint with day/night gradient and sunset boost", "Своя окраска неба и облаков с дневным/ночным градиентом и усилением заката");
-        SETTING_TRANSLATIONS.put("Custom themes for GUI", "Свои темы для GUI");
+        SETTING_TRANSLATIONS.put("GUI themes, scale, language, blur, and loading screen settings",
+                "Настройки темы интерфейса, масштаба, языка, размытия и экрана загрузки");
+        SETTING_TRANSLATIONS.put("Custom Loading Screen", "Своя заставка загрузки");
+        SETTING_TRANSLATIONS.put("Use the custom Phaze splash screen instead of Minecraft's vanilla screen",
+                "Использовать заставку Phaze вместо стандартного экрана загрузки Minecraft");
         SETTING_TRANSLATIONS.put("Customize entity hitbox color", "Свой цвет хитбокса сущностей");
         SETTING_TRANSLATIONS.put("Damage", "Урон");
         SETTING_TRANSLATIONS.put("Day Phase", "Фаза дня");

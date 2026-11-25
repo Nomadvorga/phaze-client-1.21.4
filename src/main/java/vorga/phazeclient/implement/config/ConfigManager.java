@@ -493,7 +493,7 @@ public final class ConfigManager {
         }
 
         config.add("modules", modules);
-        vorga.phazeclient.implement.features.modules.client.Theme theme = vorga.phazeclient.implement.features.modules.client.Theme.getInstance();
+        vorga.phazeclient.implement.features.modules.client.Settings theme = vorga.phazeclient.implement.features.modules.client.Settings.getInstance();
         config.addProperty("theme", theme.menuTheme.getSelected());
         config.addProperty("blurRadius", theme.blurRadius.getValue());
         config.addProperty("menuPanoramaSpeed", MenuUiSettings.getInstance().getPanoramaSpeed());
@@ -730,14 +730,14 @@ public final class ConfigManager {
             if (config.has("theme")) {
                 try {
                     String theme = config.get("theme").getAsString();
-                    vorga.phazeclient.implement.features.modules.client.Theme.getInstance().menuTheme.setSelected(theme);
+                    vorga.phazeclient.implement.features.modules.client.Settings.getInstance().menuTheme.setSelected(theme);
                 } catch (Throwable ignored) {}
             }
 
             if (config.has("blurRadius")) {
                 try {
                     float blurRadius = config.get("blurRadius").getAsFloat();
-                    vorga.phazeclient.implement.features.modules.client.Theme.getInstance().blurRadius.setValue(blurRadius);
+                    vorga.phazeclient.implement.features.modules.client.Settings.getInstance().blurRadius.setValue(blurRadius);
                 } catch (Throwable ignored) {}
             }
 
@@ -816,14 +816,14 @@ public final class ConfigManager {
             if (config.has("theme")) {
                 try {
                     String theme = config.get("theme").getAsString();
-                    vorga.phazeclient.implement.features.modules.client.Theme.getInstance().menuTheme.setSelected(theme);
+                    vorga.phazeclient.implement.features.modules.client.Settings.getInstance().menuTheme.setSelected(theme);
                 } catch (Throwable ignored) {}
             }
 
             if (config.has("blurRadius")) {
                 try {
                     float blurRadius = config.get("blurRadius").getAsFloat();
-                    vorga.phazeclient.implement.features.modules.client.Theme.getInstance().blurRadius.setValue(blurRadius);
+                    vorga.phazeclient.implement.features.modules.client.Settings.getInstance().blurRadius.setValue(blurRadius);
                 } catch (Throwable ignored) {}
             }
         } catch (Throwable t) {
@@ -872,8 +872,8 @@ public final class ConfigManager {
             }
         }
         // Theme + blur back to boot defaults.
-        vorga.phazeclient.implement.features.modules.client.Theme.getInstance().menuTheme.setSelected("Lunar Blue");
-        vorga.phazeclient.implement.features.modules.client.Theme.getInstance().blurRadius.setValue(5.0F);
+        vorga.phazeclient.implement.features.modules.client.Settings.getInstance().menuTheme.setSelected("Lunar Blue");
+        vorga.phazeclient.implement.features.modules.client.Settings.getInstance().blurRadius.setValue(5.0F);
         MenuUiSettings.getInstance().resetToDefaults();
     }
 

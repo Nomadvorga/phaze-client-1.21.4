@@ -9,6 +9,7 @@ import net.minecraft.client.texture.NativeImage;
 import net.minecraft.text.Text;
 import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
 import vorga.phazeclient.api.system.shape.implement.Rectangle;
+import vorga.phazeclient.base.util.render.ScissorManager;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -59,7 +60,7 @@ public final class RoundedOutlineClientTest implements FabricClientGameTest {
 
     private static void verifyTile(NativeImage pixels, int row, int column) {
         int left = 20 + column * STEP;
-        int top = 20 + row * STEP;
+        int top = 21 + row * STEP;
         int visibleCorner = 0;
         int partialCorner = 0;
         for (int y = 0; y < SIZE; y++) {
@@ -78,6 +79,15 @@ public final class RoundedOutlineClientTest implements FabricClientGameTest {
         }
         check(visibleCorner > 8, "normal rounded corner outline remains visible");
         check(partialCorner > 2, "rounded corner retains partially covered AA pixels");
+        if (column != 2) {
+            int channelShift = column == 3 ? 0 : 16;
+            int straightEdge = pixels.getColorArgb(left + SIZE / 2, top);
+            int roundedCorner = pixels.getColorArgb(left + 5, top + 5);
+            check(channel(straightEdge, channelShift) > 24,
+                    "sub-2px outline remains visible at the clipped viewport edge");
+            check(Math.abs(channel(straightEdge, channelShift) - channel(roundedCorner, channelShift)) <= 35,
+                    "1.2px SDF stroke has comparable coverage on the straight edge and rounded corner");
+        }
         int center = pixels.getColorArgb(left + SIZE / 2, top + SIZE / 2);
         check(Math.abs(channel(center, 0) - (column == 2 ? 32 : 0)) <= 1,
                 "transparent fill stays invisible; opaque dark panel stays filled");
@@ -126,12 +136,21 @@ public final class RoundedOutlineClientTest implements FabricClientGameTest {
         }
 
         private void renderRow(DrawContext context, int row) {
+            ScissorManager scissor = new ScissorManager();
             for (int column = 0; column < FILLS.length; column++) {
-                // Fractional placement samples both sides of the SDF's AA edge.
-                rectangle.render(ShapeProperties.create(context.getMatrices(),
-                                20.25F + column * STEP, 20.25F + row * STEP, SIZE, SIZE)
-                        .round(16).softness(1).thickness(2)
-                        .color(FILLS[column]).outlineColor(OUTLINES[column]).build());
+                // Half-pixel placement plus a matching clip exercises the
+                // config-sidebar failure: the old inward-rounded scissor
+                // removed this first covered edge pixel at 2x GUI scale.
+                float x = 20.25F + column * STEP;
+                float y = 21.5F + row * STEP;
+                scissor.push(context.getMatrices().peek().getPositionMatrix(), x, y, SIZE, SIZE);
+                try {
+                    rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, SIZE, SIZE)
+                            .round(17.32F).softness(1).thickness(1.2F)
+                            .color(FILLS[column]).outlineColor(OUTLINES[column]).build());
+                } finally {
+                    scissor.pop();
+                }
             }
         }
     }

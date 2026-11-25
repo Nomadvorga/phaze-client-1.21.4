@@ -241,7 +241,7 @@ public final class BatchedRectangle {
         float baseY = windowHeight - scaledHeight - basePos.y;
 
         Vector4f radius = SCRATCH_RADIUS.set(shape.getRound()).mul(sizeVec.y);
-        float softness = shape.getSoftness();
+        float softness = Math.max(0.0F, shape.getSoftness());
 
         // Same per-vertex alpha pre-multiplication the uniform path applies to its colors.
         Vector4i colors = shape.getColor();
@@ -254,8 +254,13 @@ public final class BatchedRectangle {
         try {
             // gl_FragCoord is y-up while the GUI matrix is y-down, so the screen top-left
             // corner carries the coords-(0,1) gradient color, and so on.
-            GuiBatch.rect(matrix, shape.getX() - softness / 2.0F, shape.getY() - softness / 2.0F,
-                    shape.getWidth() + softness, shape.getHeight() + softness,
+            // SDF coverage is evaluated in framebuffer pixels. Keep at least
+            // its half-pixel AA fringe inside the quad, including at zero
+            // softness and when the menu matrix is scaled down.
+            float pixelScale = Math.max(1.0E-4F, Math.min(Math.abs(sizeVec.x), Math.abs(sizeVec.y)));
+            float geometryPad = Math.max(softness, Math.max(1.0F, softness) / pixelScale);
+            GuiBatch.rect(matrix, shape.getX() - geometryPad / 2.0F, shape.getY() - geometryPad / 2.0F,
+                    shape.getWidth() + geometryPad, shape.getHeight() + geometryPad,
                     color2, color4, color1, color3,
                     baseX, baseY, scaledWidth, scaledHeight,
                     radius.x, radius.y, radius.z, radius.w,

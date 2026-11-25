@@ -4,6 +4,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.util.math.MathHelper;
 import vorga.phazeclient.implement.features.modules.client.Theme;
+import vorga.phazeclient.implement.features.modules.client.Settings;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -50,7 +51,7 @@ final class HudTextDraw {
     }
 
     static int resolveHudTextColor() {
-        Theme theme = Theme.getInstance();
+        Settings theme = Theme.getInstance();
         if (theme == null) {
             return HUD_TEXT_COLOR;
         }

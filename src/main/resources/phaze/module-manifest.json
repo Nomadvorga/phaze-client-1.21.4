@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "manifestVersion": 15,
-  "clientVersion": "1.2",
+  "manifestVersion": 16,
+  "clientVersion": "1.1",
   "modules": [
     {
       "id": "animations",
@@ -450,7 +450,7 @@
     },
     {
       "id": "themes",
-      "name": "Themes",
+      "name": "Settings",
       "category": "OTHER"
     },
     {

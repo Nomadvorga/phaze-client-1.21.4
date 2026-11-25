@@ -1,20 +1,12 @@
 package vorga.phazeclient.implement.menu.components.implement.other;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.ShaderProgramKeys;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ChatScreen;
-import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
-import net.minecraft.client.render.Tessellator;
-import net.minecraft.client.render.VertexFormat;
-import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
-import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.system.animation.Animation;
@@ -24,16 +16,13 @@ import vorga.phazeclient.api.system.cursor.CursorManager;
 import vorga.phazeclient.api.system.font.msdf.MsdfFonts;
 import vorga.phazeclient.api.system.font.msdf.MsdfRenderer;
 import vorga.phazeclient.api.system.shape.ShapeProperties;
-import vorga.phazeclient.api.system.shape.batched.BatchedRectangle;
-import vorga.phazeclient.api.system.shape.batched.GuiBatch;
-import vorga.phazeclient.api.system.shape.implement.Image;
 import vorga.phazeclient.base.util.Lang;
-import vorga.phazeclient.base.util.color.ColorUtil;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.implement.features.modules.client.Theme;
 import vorga.phazeclient.implement.menu.MenuScreen;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.MenuLayout;
+import vorga.phazeclient.implement.menu.UiMsdfIconAtlas;
 import vorga.phazeclient.implement.menu.components.AbstractComponent;
 import vorga.phazeclient.implement.menu.components.implement.settings.SettingLabel;
 import vorga.phazeclient.implement.config.ConfigManager;
@@ -46,7 +35,7 @@ import java.util.Map;
 @Setter
 @Accessors(chain = true)
 public class BackgroundComponent extends AbstractComponent {
-    private static final Identifier CONFIG_CROSS_TEXTURE = Identifier.of("phaze", "textures/menu/cross.png");
+    private static final Identifier CONFIG_CROSS_ICON = Identifier.ofVanilla("textures/cross.png");
     private static final float TAB_TEXT_SIZE = 6.9F;
     private static final float FOOTER_TEXT_SIZE = 5.5F;
     private static final float CONFIG_TEXT_SIZE = 6.0F;
@@ -849,21 +838,10 @@ public class BackgroundComponent extends AbstractComponent {
     }
 
     private void renderConfigCross(MatrixStack matrix, float x, float y, float size, int color) {
-        Matrix4f positionMatrix = matrix.peek().getPositionMatrix();
-        if (BatchedRectangle.isBatching()) {
-            GuiBatch.texture(Image.textureGlId(CONFIG_CROSS_TEXTURE)).quad(positionMatrix, x, y, size, size, 0.0F,
-                    0.0F, 0.0F, 1.0F, 1.0F, ColorUtil.multShaderColor(color), 0);
-            return;
-        }
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.setShaderTexture(0, CONFIG_CROSS_TEXTURE);
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-
-        BufferBuilder buffer = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE_COLOR);
-        Image.emitTexturedQuad(buffer, positionMatrix, x, y, size, size, color);
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
-        RenderSystem.disableBlend();
+        // Keep the legacy icon quad bounds and tint, but sample the shared
+        // MSDF atlas. In the menu render scope this appends one deferred quad
+        // to the existing batch; there is intentionally no raster fallback.
+        UiMsdfIconAtlas.renderIcon(matrix, CONFIG_CROSS_ICON, x, y, size, size, color);
     }
 
     private boolean isSettingsTabActive() {

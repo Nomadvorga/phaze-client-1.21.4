@@ -58,6 +58,10 @@ public final class TextureFilteringChecks {
         }
         for (String file : List.of("hue", "alpha", "triangle")) linear("assets/minecraft/textures/color_picker/" + file + ".png");
         linear("assets/phaze/textures/menu/cross.png");
+        msdfVanillaCross();
+        configCrossUsesMsdf();
+        msdfIconSmoothing();
+        roundedOutlineCoverage();
         // Preserve Image's raster fallback quality even if the MSDF icon atlas is unavailable.
         try (var files = Files.list(Path.of("src/main/resources/assets/phaze/textures/modules"))) {
             for (Path png : files.filter(file -> file.toString().endsWith(".png")).toList()) {
@@ -67,6 +71,96 @@ public final class TextureFilteringChecks {
         check(TextureFilteringChecks.class.getClassLoader().getResource("assets/minecraft/textures/atlas/blocks.png.mcmeta") == null,
                 "does not override vanilla atlas filtering or mipmap policy");
         System.out.println("Texture filtering checks passed: " + checks + " (no GL context)");
+    }
+
+    /** The icon-only edge ramp must be bounded identically in both draw paths. */
+    private static void msdfIconSmoothing() throws Exception {
+        String atlas = Files.readString(Path.of("src/main/java/vorga/phazeclient/implement/menu/UiMsdfIconAtlas.java"));
+        check(atlas.contains("private static final float ICON_SMOOTHNESS = 0.30F;"),
+                "MSDF icon default edge ramp is the crisp 0.30 value");
+        check(atlas.contains("float iconSmoothness = Math.min(smoothness, ICON_SMOOTHNESS);"),
+                "explicit icon ramps cannot exceed the crispness limit");
+        check(atlas.contains("MsdfBatch.beginIcon(atlasTexture.getGlId(), distanceRange, thickness, iconSmoothness)"),
+                "deferred icon draws receive the bounded edge ramp");
+        check(atlas.contains("shader.getUniform(\"Smoothness\").set(iconSmoothness);"),
+                "immediate icon draws receive the same bounded edge ramp");
+    }
+
+    /** Keep the vanilla close/delete cross addressable through the shared MSDF icon atlas. */
+    private static void msdfVanillaCross() throws Exception {
+        try (InputStream metadata = TextureFilteringChecks.class.getClassLoader()
+                .getResourceAsStream("assets/phaze/msdf/ui_icons.json")) {
+            check(metadata != null, "bundled MSDF icon atlas metadata is available");
+            var root = JsonParser.parseReader(new InputStreamReader(metadata, StandardCharsets.UTF_8)).getAsJsonObject();
+            var atlas = root.getAsJsonObject("atlas");
+            check(atlas != null && atlas.get("distanceRange").getAsFloat() > 0.0F,
+                    "MSDF icon atlas provides a positive distance range");
+
+            boolean foundCross = false;
+            for (var element : root.getAsJsonArray("icons")) {
+                var icon = element.getAsJsonObject();
+                if (!icon.has("id") || !"minecraft:textures/cross.png".equals(icon.get("id").getAsString())) {
+                    continue;
+                }
+                var cell = icon.getAsJsonObject("atlasBounds");
+                var ink = icon.getAsJsonObject("inkBounds");
+                check(cell != null && ink != null, "vanilla cross has atlas and visible-ink bounds");
+                check(cell.get("right").getAsFloat() > cell.get("left").getAsFloat()
+                                && cell.get("bottom").getAsFloat() > cell.get("top").getAsFloat(),
+                        "vanilla cross atlas cell has positive dimensions");
+                foundCross = true;
+                break;
+            }
+            check(foundCross, "vanilla cross ID resolves to an MSDF atlas entry");
+        }
+    }
+
+    /** The sidebar delete X must keep its quad/tint but have no raster rendering branch. */
+    private static void configCrossUsesMsdf() throws Exception {
+        ClassNode background = read(MENU + "components/implement/other/BackgroundComponent");
+        MethodNode method = background.methods.stream()
+                .filter(candidate -> candidate.name.equals("renderConfigCross"))
+                .findFirst().orElseThrow();
+        List<MethodInsnNode> methodCalls = calls(method);
+        long atlasCalls = methodCalls.stream().filter(call -> call.owner.equals(MENU + "UiMsdfIconAtlas")
+                && call.name.equals("renderIcon")).count();
+        check(atlasCalls == 1, "config delete X submits exactly one shared-atlas icon quad");
+        check(methodCalls.stream().noneMatch(call -> call.owner.equals(MENU + "GuiBatch")
+                        || call.owner.equals("vorga/phazeclient/api/system/shape/implement/Image")
+                        || call.owner.equals("com/mojang/blaze3d/systems/RenderSystem")
+                        || call.owner.startsWith("net/minecraft/client/render/")),
+                "config delete X has no raster texture or immediate-render fallback");
+
+        String source = Files.readString(Path.of(
+                "src/main/java/vorga/phazeclient/implement/menu/components/implement/other/BackgroundComponent.java"));
+        check(source.contains("Identifier.ofVanilla(\"textures/cross.png\")"),
+                "config delete X uses the registered vanilla cross atlas ID");
+        check(source.contains("renderIcon(matrix, CONFIG_CROSS_ICON, x, y, size, size, color)"),
+                "config delete X preserves its original position, quad size and hover tint");
+    }
+
+    /** Both eager fallback and the shared batched shader use the same analytic stroke band. */
+    private static void roundedOutlineCoverage() throws Exception {
+        String eager = Files.readString(Path.of("src/main/resources/assets/phaze/shaders/core/round.fsh"));
+        String batched = Files.readString(Path.of("src/main/resources/assets/phaze/shaders/core/gui_batched.fsh"));
+        String[] required = {
+                "length(vec2(dFdx(distance), dFdy(distance)))",
+                "float shapeCoverage = 1.0 - smoothstep(-halfAa, halfAa, distance);",
+                "float fillCoverage = 1.0 - smoothstep(-thickness - halfAa, -thickness + halfAa, distance);",
+                "float borderCoverage = max(shapeCoverage - fillCoverage, 0.0);"
+        };
+        for (String fragment : required) {
+            check(eager.contains(fragment), "eager rounded shader contains shared SDF outline step: " + fragment);
+            check(batched.contains(fragment), "batched rounded shader contains shared SDF outline step: " + fragment);
+        }
+        String oldBand = "smoothstep(thickness - 2.0, thickness, abs(distance))";
+        check(!eager.contains(oldBand) && !batched.contains(oldBand),
+                "sub-2px outline no longer uses the fading symmetric thickness-minus-two band");
+
+        String scissor = Files.readString(Path.of("src/main/java/vorga/phazeclient/base/util/render/ScissorManager.java"));
+        check(scissor.contains("Math.floor(scissor.y * scaleFactor)")
+                        && scissor.contains("Math.ceil((scissor.y + scissor.height) * scaleFactor)"),
+                "scissor edges round outward after framebuffer scaling, preserving fractional first rows");
     }
 
     private static void linear(String png) throws Exception {
