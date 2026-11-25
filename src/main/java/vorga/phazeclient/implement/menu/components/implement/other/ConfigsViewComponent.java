@@ -32,7 +32,7 @@ import java.util.Map;
  * minus equal side margins. No header / back-arrow / title - the user
  * told us those duplicated information already shown in the top tabs.
  *
- * <p>Three square cards per row, each carrying:
+ * <p>Three square-ish cards per row, each carrying:
  * <ul>
  *   <li>Top-left: file / file-import type icon.</li>
  *   <li>Top: config name (ellipsis-trimmed to the card width).</li>
@@ -48,6 +48,7 @@ import java.util.Map;
  */
 public class ConfigsViewComponent extends AbstractComponent {
 
+    private static final float CARD_HEIGHT = 54.0F;
     private static final float CARD_GAP = 4.0F;
     private static final float CARD_RADIUS = 4.0F;
     private static final int CARD_COLUMNS = 3;
@@ -244,9 +245,8 @@ public class ConfigsViewComponent extends AbstractComponent {
         // Bound scroll to the actual visible window so the user can
         // never scroll past the last row or above the first.
         float listH = listBottom - listY;
-        float cardSize = squareCardSide(listW);
         int rowCount = (names.length + CARD_COLUMNS - 1) / CARD_COLUMNS;
-        float contentH = rowCount * (cardSize + CARD_GAP) - CARD_GAP;
+        float contentH = rowCount * (CARD_HEIGHT + CARD_GAP) - CARD_GAP;
         maxScrollOffset = Math.max(0.0F, contentH - listH);
         if (scrollOffset < 0.0F) scrollOffset = 0.0F;
         if (scrollOffset > maxScrollOffset) scrollOffset = maxScrollOffset;
@@ -263,14 +263,15 @@ public class ConfigsViewComponent extends AbstractComponent {
         context.enableScissor((int) listX, (int) listY,
                 (int) (listX + listW), (int) listBottom);
 
-        // Equal side margins + equal column gaps keep the square cards centred.
+        // Equal side margins + equal column gaps keep the grid centred.
+        float cardW = (listW - CARD_GAP * (CARD_COLUMNS - 1)) / CARD_COLUMNS;
         for (int i = 0; i < names.length; i++) {
             int column = i % CARD_COLUMNS;
             int row = i / CARD_COLUMNS;
-            float cardX = listX + column * (cardSize + CARD_GAP);
-            float cardY = listY + row * (cardSize + CARD_GAP) - smoothScrollOffset;
-            if (cardY + cardSize > listY && cardY < listBottom) {
-                renderCard(matrix, mouseX, mouseY, cardX, cardY, cardSize, names[i], fadeAlpha);
+            float cardX = listX + column * (cardW + CARD_GAP);
+            float cardY = listY + row * (CARD_HEIGHT + CARD_GAP) - smoothScrollOffset;
+            if (cardY + CARD_HEIGHT > listY && cardY < listBottom) {
+                renderCard(matrix, mouseX, mouseY, cardX, cardY, cardW, names[i], fadeAlpha);
             }
         }
 
@@ -279,9 +280,9 @@ public class ConfigsViewComponent extends AbstractComponent {
     }
 
     private void renderCard(MatrixStack matrix, int mouseX, int mouseY,
-                            float cardX, float cardY, float cardSize,
+                            float cardX, float cardY, float cardW,
                             String name, float fadeAlpha) {
-        boolean hovered = MathUtil.isHovered(mouseX, mouseY, cardX, cardY, cardSize, cardSize);
+        boolean hovered = MathUtil.isHovered(mouseX, mouseY, cardX, cardY, cardW, CARD_HEIGHT);
         if (hovered) {
             vorga.phazeclient.api.system.cursor.CursorManager.requestHand();
         }
@@ -307,7 +308,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         int outline = MenuStyle.mix(MenuStyle.BORDER, selectedBorder, activeT);
         outline = MenuStyle.mix(outline, MenuStyle.BORDER_LIGHT, h * 0.55F);
         int fill = MenuStyle.mix(MenuStyle.CARD_BG, MenuStyle.TEXT_PRIMARY, h * 0.10F);
-        rectangle.render(ShapeProperties.create(matrix, cardX, cardY, cardSize, cardSize)
+        rectangle.render(ShapeProperties.create(matrix, cardX, cardY, cardW, CARD_HEIGHT)
                 .round(CARD_RADIUS).thickness(1.5F + 0.7F * activeT)
                 .outlineColor(MenuStyle.withAlpha(outline, fadeAlpha))
                 .color(MenuStyle.withAlpha(fill, fadeAlpha * 0.92F))
@@ -327,7 +328,7 @@ public class ConfigsViewComponent extends AbstractComponent {
         float textX = cardX + CARD_PAD + CARD_ICON_SIZE + 6.0F;
         float nameY = cardY + CARD_PAD + 1.0F;
         float metaCenterY = nameY + NAME_SIZE + 5.5F;
-        float nameMaxW = cardSize - (textX - cardX) - CARD_PAD;
+        float nameMaxW = cardW - (textX - cardX) - CARD_PAD;
         MsdfRenderer.renderText(
                 MsdfFonts.bold(), fitLabel(name, nameMaxW), NAME_SIZE,
                 MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, fadeAlpha),
@@ -336,11 +337,11 @@ public class ConfigsViewComponent extends AbstractComponent {
                 nameY,
                 0.0F
         );
-        renderRowMeta(matrix, cardX, textX, metaCenterY, cardSize, name, imported, fadeAlpha);
+        renderRowMeta(matrix, cardX, textX, metaCenterY, cardW, name, imported, fadeAlpha);
 
         // Three square action buttons bottom-right: rename → share →
         // delete. Each has its own plate, hover animation and hit-area.
-        renderActionButtons(matrix, mouseX, mouseY, cardX, cardY, cardSize, name, fadeAlpha);
+        renderActionButtons(matrix, mouseX, mouseY, cardX, cardY, cardW, name, fadeAlpha);
     }
 
     /** Trims a card title with an ellipsis when it outgrows the card. */
@@ -506,13 +507,13 @@ public class ConfigsViewComponent extends AbstractComponent {
     }
 
     private void renderActionButtons(MatrixStack matrix, int mouseX, int mouseY,
-                                     float cardX, float cardY, float cardSize,
+                                     float cardX, float cardY, float cardW,
                                      String configName, float fadeAlpha) {
         ActionKind[] kinds = ActionKind.values();
         float totalW = kinds.length * ACTION_BUTTON_SIZE
                 + (kinds.length - 1) * ACTION_BUTTON_GAP;
-        float startX = cardX + cardSize - totalW - ACTIONS_TRAIL_PAD;
-        float btnY = cardY + cardSize - ACTION_BUTTON_SIZE - ACTIONS_BOTTOM_PAD;
+        float startX = cardX + cardW - totalW - ACTIONS_TRAIL_PAD;
+        float btnY = cardY + CARD_HEIGHT - ACTION_BUTTON_SIZE - ACTIONS_BOTTOM_PAD;
         for (int i = 0; i < kinds.length; i++) {
             ActionKind kind = kinds[i];
             float btnX = startX + i * (ACTION_BUTTON_SIZE + ACTION_BUTTON_GAP);
@@ -596,7 +597,7 @@ public class ConfigsViewComponent extends AbstractComponent {
 
         ConfigManager mgr = ConfigManager.getInstance();
         String[] names = mgr.getConfigList();
-        float cardSize = squareCardSide(listW);
+        float cardW = (listW - CARD_GAP * (CARD_COLUMNS - 1)) / CARD_COLUMNS;
         ActionKind[] kinds = ActionKind.values();
         float actionsTotalW = kinds.length * ACTION_BUTTON_SIZE
                 + (kinds.length - 1) * ACTION_BUTTON_GAP;
@@ -604,15 +605,15 @@ public class ConfigsViewComponent extends AbstractComponent {
             String name = names[i];
             int column = i % CARD_COLUMNS;
             int row = i / CARD_COLUMNS;
-            float cardX = listX + column * (cardSize + CARD_GAP);
-            float cardY = listTop + row * (cardSize + CARD_GAP) - smoothScrollOffset;
-            if (cardY + cardSize > listTop && cardY < listBottom) {
+            float cardX = listX + column * (cardW + CARD_GAP);
+            float cardY = listTop + row * (CARD_HEIGHT + CARD_GAP) - smoothScrollOffset;
+            if (cardY + CARD_HEIGHT > listTop && cardY < listBottom) {
                 // Square action buttons take precedence over the
                 // body-click "load this config" hit-area, so the
                 // user can rename / share / delete without the card
                 // also activating itself underneath.
-                float actionsStartX = cardX + cardSize - actionsTotalW - ACTIONS_TRAIL_PAD;
-                float btnY = cardY + cardSize - ACTION_BUTTON_SIZE - ACTIONS_BOTTOM_PAD;
+                float actionsStartX = cardX + cardW - actionsTotalW - ACTIONS_TRAIL_PAD;
+                float btnY = cardY + CARD_HEIGHT - ACTION_BUTTON_SIZE - ACTIONS_BOTTOM_PAD;
                 ActionKind hit = null;
                 for (int k = 0; k < kinds.length; k++) {
                     float btnX = actionsStartX + k * (ACTION_BUTTON_SIZE + ACTION_BUTTON_GAP);
@@ -627,7 +628,7 @@ public class ConfigsViewComponent extends AbstractComponent {
                     return true;
                 }
 
-                if (MathUtil.isHovered(mouseX, mouseY, cardX, cardY, cardSize, cardSize)) {
+                if (MathUtil.isHovered(mouseX, mouseY, cardX, cardY, cardW, CARD_HEIGHT)) {
                     playButtonClickSound();
                     mgr.loadConfig(name);
                     refreshMetadataCaches();
@@ -668,9 +669,7 @@ public class ConfigsViewComponent extends AbstractComponent {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
         if (!open) return false;
-        float listW = width - SIDE_MARGIN * 2.0F;
-        float cardSize = squareCardSide(listW);
-        scrollOffset -= (float) amount * (cardSize + CARD_GAP);
+        scrollOffset -= (float) amount * (CARD_HEIGHT + CARD_GAP);
         if (scrollOffset < 0.0F) scrollOffset = 0.0F;
         if (scrollOffset > maxScrollOffset) scrollOffset = maxScrollOffset;
         return true;
@@ -679,10 +678,6 @@ public class ConfigsViewComponent extends AbstractComponent {
     /* ============================================================ */
     /* helpers                                                      */
     /* ============================================================ */
-
-    private static float squareCardSide(float listWidth) {
-        return (listWidth - CARD_GAP * (CARD_COLUMNS - 1)) / CARD_COLUMNS;
-    }
 
     private static String nextRename(String base) {
         for (int i = 2; i < 100; i++) {
