@@ -60,6 +60,7 @@ public final class TextureFilteringChecks {
         linear("assets/phaze/textures/menu/cross.png");
         msdfVanillaCross();
         configCrossUsesMsdf();
+        configCardsUseSquareGeometry();
         msdfIconSmoothing();
         configActionButtonsMatchCosmeticsCardThickness();
         settingCardOutlineUsesSharedThickness();
@@ -173,6 +174,18 @@ public final class TextureFilteringChecks {
                 "all setting cards use the shared intended 1.2px outline value");
         check(source.contains(".thickness(CARD_OUTLINE_THICKNESS)"),
                 "setting-card renderer passes the shared outline value to the SDF shader");
+    }
+
+    private static void configCardsUseSquareGeometry() throws Exception {
+        String source = Files.readString(Path.of(
+                "src/main/java/vorga/phazeclient/implement/menu/components/implement/other/ConfigsViewComponent.java"));
+        check(source.contains("private static float squareCardSide(float listWidth)"),
+                "config card side is derived from the available grid width");
+        check(source.contains("float cardSize = squareCardSide(listW);"),
+                "config grid uses one shared square side for each card");
+        check(source.contains("cardY + cardSize > listY")
+                        && source.contains("MathUtil.isHovered(mouseX, mouseY, cardX, cardY, cardSize, cardSize)"),
+                "square card clipping and body hit-area use the expanded height");
     }
 
     /** Idle config action buttons should match the normal cosmetics catalog card stroke. */
