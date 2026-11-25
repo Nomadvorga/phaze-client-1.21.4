@@ -140,7 +140,7 @@ public final class RoundedOutlineClientTest implements FabricClientGameTest {
             for (int column = 0; column < FILLS.length; column++) {
                 // Half-pixel placement plus a matching clip exercises the
                 // config-sidebar failure: the old inward-rounded scissor
-                // removed this first covered edge pixel at 2x GUI scale.
+                // removed this first covered edge pixel at fractional GUI coordinates.
                 float x = 20.25F + column * STEP;
                 float y = 21.5F + row * STEP;
                 scissor.push(context.getMatrices().peek().getPositionMatrix(), x, y, SIZE, SIZE);

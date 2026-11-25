@@ -61,6 +61,7 @@ public final class TextureFilteringChecks {
         msdfVanillaCross();
         configCrossUsesMsdf();
         msdfIconSmoothing();
+        settingCardOutlineUsesSharedThickness();
         roundedOutlineCoverage();
         // Preserve Image's raster fallback quality even if the MSDF icon atlas is unavailable.
         try (var files = Files.list(Path.of("src/main/resources/assets/phaze/textures/modules"))) {
@@ -161,6 +162,15 @@ public final class TextureFilteringChecks {
         check(scissor.contains("Math.floor(scissor.y * scaleFactor)")
                         && scissor.contains("Math.ceil((scissor.y + scissor.height) * scaleFactor)"),
                 "scissor edges round outward after framebuffer scaling, preserving fractional first rows");
+    }
+
+    private static void settingCardOutlineUsesSharedThickness() throws Exception {
+        String source = Files.readString(Path.of(
+                "src/main/java/vorga/phazeclient/implement/menu/components/implement/settings/AbstractSettingComponent.java"));
+        check(source.contains("private static final float CARD_OUTLINE_THICKNESS = 1.2F;"),
+                "all setting cards use the shared intended 1.2px outline value");
+        check(source.contains(".thickness(CARD_OUTLINE_THICKNESS)"),
+                "setting-card renderer passes the shared outline value to the SDF shader");
     }
 
     private static void linear(String png) throws Exception {
