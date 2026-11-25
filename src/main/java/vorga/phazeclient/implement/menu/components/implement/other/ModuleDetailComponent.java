@@ -19,6 +19,7 @@ import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.math.MathUtil;
 import vorga.phazeclient.base.util.render.ScissorManager;
 import vorga.phazeclient.core.Main;
+import vorga.phazeclient.implement.features.modules.client.Settings;
 import vorga.phazeclient.implement.menu.MenuScreen;
 import vorga.phazeclient.implement.menu.MenuStyle;
 import vorga.phazeclient.implement.menu.UiMsdfIconAtlas;
@@ -115,6 +116,16 @@ public class ModuleDetailComponent extends AbstractComponent {
         return contentY() + PANEL_PADDING;
     }
 
+    private boolean hasBackButton() {
+        return module != Settings.getInstance();
+    }
+
+    private float headerTextX() {
+        return hasBackButton()
+                ? backButtonX() + BACK_BUTTON_SIZE + 8.0F
+                : contentX() + PANEL_PADDING;
+    }
+
     private float settingsPanelX() {
         return contentX() + PANEL_PADDING;
     }
@@ -146,24 +157,28 @@ public class ModuleDetailComponent extends AbstractComponent {
     private void renderHeader(DrawContext context, int mouseX, int mouseY, float anim) {
         MatrixStack matrices = context.getMatrices();
 
-        boolean backHovered = MathUtil.isHovered(mouseX, mouseY, backButtonX(), backButtonY(), BACK_BUTTON_SIZE, BACK_BUTTON_SIZE);
-        backHoverAnimation.setDirection(backHovered ? Direction.FORWARDS : Direction.BACKWARDS);
-        float backHover = backHoverAnimation.getOutputFloat();
-        int backBg = backHovered ? MenuStyle.mix(MenuStyle.PANEL_CHIP, MenuStyle.CARD_OPTIONS, 0.45F) : MenuStyle.PANEL_CHIP;
-        int backBorder = backHovered ? MenuStyle.BORDER_LIGHT : MenuStyle.BORDER;
+        if (hasBackButton()) {
+            boolean backHovered = MathUtil.isHovered(mouseX, mouseY, backButtonX(), backButtonY(), BACK_BUTTON_SIZE, BACK_BUTTON_SIZE);
+            backHoverAnimation.setDirection(backHovered ? Direction.FORWARDS : Direction.BACKWARDS);
+            float backHover = backHoverAnimation.getOutputFloat();
+            int backBg = backHovered ? MenuStyle.mix(MenuStyle.PANEL_CHIP, MenuStyle.CARD_OPTIONS, 0.45F) : MenuStyle.PANEL_CHIP;
+            int backBorder = backHovered ? MenuStyle.BORDER_LIGHT : MenuStyle.BORDER;
 
-        rectangle.render(ShapeProperties.create(matrices, backButtonX(), backButtonY(), BACK_BUTTON_SIZE, BACK_BUTTON_SIZE)
-                .round(3)
-                .thickness(1.2F)
-                .outlineColor(MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.PANEL_BG, backBorder, anim), 0.96F * anim))
-                .color(MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.PANEL_BG, backBg, anim), 0.92F * anim))
-                .build());
-        UiMsdfIconAtlas.renderBackArrow(context,
-                backButtonX() + BACK_BUTTON_SIZE / 2.0F, backButtonY() + BACK_BUTTON_SIZE / 2.0F, 7.5F,
-                MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.TEXT_PRIMARY, 0xFFFFFFFF, backHover * 0.18F), anim));
+            rectangle.render(ShapeProperties.create(matrices, backButtonX(), backButtonY(), BACK_BUTTON_SIZE, BACK_BUTTON_SIZE)
+                    .round(3)
+                    .thickness(1.2F)
+                    .outlineColor(MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.PANEL_BG, backBorder, anim), 0.96F * anim))
+                    .color(MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.PANEL_BG, backBg, anim), 0.92F * anim))
+                    .build());
+            UiMsdfIconAtlas.renderBackArrow(context,
+                    backButtonX() + BACK_BUTTON_SIZE / 2.0F, backButtonY() + BACK_BUTTON_SIZE / 2.0F, 7.5F,
+                    MenuStyle.withAlpha(MenuStyle.mix(MenuStyle.TEXT_PRIMARY, 0xFFFFFFFF, backHover * 0.18F), anim));
+        } else {
+            backHoverAnimation.setDirection(Direction.BACKWARDS);
+        }
 
         String title = module.getLocalizedName().toUpperCase(Locale.ROOT);
-        float titleX = backButtonX() + BACK_BUTTON_SIZE + 8.0F;
+        float titleX = headerTextX();
         float titleY;
         titleY = MenuStyle.centerMsdfTextY(8.2F, backButtonY(), BACK_BUTTON_SIZE);
         MsdfRenderer.renderText(MsdfFonts.bold(), title, 8.2F, MenuStyle.withAlpha(MenuStyle.TEXT_PRIMARY, anim), matrices.peek().getPositionMatrix(), titleX, titleY, 0.0F);
@@ -183,12 +198,14 @@ public class ModuleDetailComponent extends AbstractComponent {
         // and categories are intentionally NOT translated.
         description = Lang.translate(description);
 
-        float descX = backButtonX() + BACK_BUTTON_SIZE + 8.0F;
+        float descX = headerTextX();
         float descY = backButtonY() + DESCRIPTION_TOP_OFFSET;
         float lineHeight = DESCRIPTION_TEXT_SIZE + 1.6F;
         MsdfFont descFont = MsdfFonts.medium();
+        float descriptionWidth = contentWidth() - PANEL_PADDING * 2.0F
+                - (hasBackButton() ? 32.0F : 0.0F);
 
-        for (String line : wrap(description, descFont, DESCRIPTION_TEXT_SIZE, contentWidth() - PANEL_PADDING * 2.0F - 32.0F)) {
+        for (String line : wrap(description, descFont, DESCRIPTION_TEXT_SIZE, descriptionWidth)) {
             MsdfRenderer.renderText(
                     descFont,
                     line,
@@ -360,7 +377,7 @@ public class ModuleDetailComponent extends AbstractComponent {
             return false;
         }
 
-        if (MathUtil.isHovered(mouseX, mouseY, backButtonX(), backButtonY(), BACK_BUTTON_SIZE, BACK_BUTTON_SIZE)) {
+        if (hasBackButton() && MathUtil.isHovered(mouseX, mouseY, backButtonX(), backButtonY(), BACK_BUTTON_SIZE, BACK_BUTTON_SIZE)) {
             return true;
         }
 
@@ -379,7 +396,8 @@ public class ModuleDetailComponent extends AbstractComponent {
             return false;
         }
 
-        if (button == 0 && MathUtil.isHovered(mouseX, mouseY, backButtonX(), backButtonY(), BACK_BUTTON_SIZE, BACK_BUTTON_SIZE)) {
+        if (button == 0 && hasBackButton()
+                && MathUtil.isHovered(mouseX, mouseY, backButtonX(), backButtonY(), BACK_BUTTON_SIZE, BACK_BUTTON_SIZE)) {
             playButtonClickSound();
             closeDetail();
             return true;

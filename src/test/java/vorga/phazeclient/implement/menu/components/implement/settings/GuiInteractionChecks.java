@@ -41,6 +41,8 @@ public final class GuiInteractionChecks {
         enabledDragging();
         disableAndReenable();
         scrollAndScreenReset();
+        sidebarConfigScrollPriority();
+        settingsHeaderHidesBackButton();
         readoutContracts();
         messengerContracts();
         messengerCardBounds();
@@ -203,6 +205,38 @@ public final class GuiInteractionChecks {
             }
         }
         check(renderCalls == 1, "the chat scale readout is drawn exactly once outside the GUI");
+    }
+
+    private static void sidebarConfigScrollPriority() throws Exception {
+        MethodNode scroll = method(readClass("vorga/phazeclient/implement/menu/MenuScreen"), "mouseScrolled");
+        List<MethodInsnNode> scrollCalls = calls(scroll);
+        int sidebar = -1;
+        int detail = -1;
+        for (int i = 0; i < scrollCalls.size(); i++) {
+            MethodInsnNode call = scrollCalls.get(i);
+            if (!call.name.equals("mouseScrolled")) continue;
+            if (call.owner.equals("vorga/phazeclient/implement/menu/components/implement/other/BackgroundComponent")) {
+                sidebar = i;
+            } else if (call.owner.equals("vorga/phazeclient/implement/menu/components/implement/other/ModuleDetailComponent")) {
+                detail = i;
+            }
+        }
+        check(sidebar >= 0 && detail > sidebar,
+                "sidebar config list receives the scroll wheel before Settings detail consumes it");
+    }
+
+    private static void settingsHeaderHidesBackButton() throws Exception {
+        String owner = "vorga/phazeclient/implement/menu/components/implement/other/ModuleDetailComponent";
+        ClassNode detail = readClass(owner);
+        check(calls(method(detail, "hasBackButton")).stream().anyMatch(call ->
+                        call.owner.equals("vorga/phazeclient/implement/features/modules/client/Settings")
+                                && call.name.equals("getInstance")),
+                "the settings module is identified as the one detail page without a back button");
+        for (String methodName : List.of("renderHeader", "isInteractiveHover", "mouseClicked")) {
+            check(calls(method(detail, methodName)).stream().anyMatch(call ->
+                            call.owner.equals(owner) && call.name.equals("hasBackButton")),
+                    "hidden settings back button is consistently handled by " + methodName);
+        }
     }
 
     private static void messengerContracts() throws Exception {

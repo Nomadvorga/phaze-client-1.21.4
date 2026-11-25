@@ -824,6 +824,13 @@ public class MenuScreen extends Screen implements QuickImports {
             if (windowManager.mouseScrolled(overlayMouseX, overlayMouseY, vertical)) {
                 return true;
             }
+            // The Settings page keeps the module detail panel open, but the
+            // config list remains visible in the sidebar. Give that viewport
+            // the wheel before the detail panel consumes the event.
+            backgroundComponent.position(x, y).size(width, height);
+            if (backgroundComponent.mouseScrolled(overlayMouseX, overlayMouseY, vertical)) {
+                return true;
+            }
             moduleDetailComponent.mouseScrolled(overlayMouseX, overlayMouseY, vertical);
             return true;
         }

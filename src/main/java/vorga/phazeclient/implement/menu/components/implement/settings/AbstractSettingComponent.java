@@ -86,7 +86,8 @@ public abstract class AbstractSettingComponent extends AbstractComponent {
         int hoveredBackground = MenuStyle.mix(baseBackground, 0xFFFFFFFF, clampedHover * 0.08f);
         int hoveredOutline = MenuStyle.mix(baseOutline, 0xFFFFFFFF, clampedHover * 0.12f);
 
-        int background = MenuStyle.withAlpha(hoveredBackground, currentAlpha * 0.78F);
+        float backgroundAlpha = currentAlpha * (0.84F - clampedActive * 0.06F);
+        int background = MenuStyle.withAlpha(hoveredBackground, backgroundAlpha);
         int outline = MenuStyle.withAlpha(hoveredOutline, currentAlpha * 0.74F);
 
         rectangle.render(ShapeProperties.create(context.getMatrices(), x, y, width, height)
