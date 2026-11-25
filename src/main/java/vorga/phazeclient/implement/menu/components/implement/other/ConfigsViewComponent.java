@@ -70,6 +70,7 @@ public class ConfigsViewComponent extends AbstractComponent {
     private static final float ACTION_BUTTON_SIZE = 14.0F;
     private static final float ACTION_BUTTON_GAP = 3.0F;
     private static final float ACTION_BUTTON_RADIUS = 3.5F;
+    private static final float ACTION_BUTTON_OUTLINE_THICKNESS = 1.5F;
     private static final float ACTION_ICON_SIZE = 8.5F;
     private static final float ACTIONS_TRAIL_PAD = 6.0F;
     private static final float ACTIONS_BOTTOM_PAD = 6.0F;
@@ -543,7 +544,7 @@ public class ConfigsViewComponent extends AbstractComponent {
                 ? MenuStyle.mix(0xFFB55F73, 0xFFFF9BAA, 0.25F + h * 0.50F)
                 : MenuStyle.mix(MenuStyle.BORDER, MenuStyle.BORDER_LIGHT, 0.20F + h * 0.60F);
         rectangle.render(ShapeProperties.create(matrix, btnX, btnY, ACTION_BUTTON_SIZE, ACTION_BUTTON_SIZE)
-                .round(ACTION_BUTTON_RADIUS).thickness(1.0F)
+                .round(ACTION_BUTTON_RADIUS).thickness(ACTION_BUTTON_OUTLINE_THICKNESS)
                 .outlineColor(MenuStyle.withAlpha(plateOutline, fadeAlpha))
                 .color(MenuStyle.withAlpha(plateFill, fadeAlpha))
                 .build());

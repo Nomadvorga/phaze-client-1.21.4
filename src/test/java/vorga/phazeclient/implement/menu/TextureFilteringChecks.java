@@ -61,6 +61,7 @@ public final class TextureFilteringChecks {
         msdfVanillaCross();
         configCrossUsesMsdf();
         msdfIconSmoothing();
+        configActionButtonsMatchCosmeticsCardThickness();
         settingCardOutlineUsesSharedThickness();
         roundedOutlineCoverage();
         // Preserve Image's raster fallback quality even if the MSDF icon atlas is unavailable.
@@ -172,6 +173,20 @@ public final class TextureFilteringChecks {
                 "all setting cards use the shared intended 1.2px outline value");
         check(source.contains(".thickness(CARD_OUTLINE_THICKNESS)"),
                 "setting-card renderer passes the shared outline value to the SDF shader");
+    }
+
+    /** Idle config action buttons should match the normal cosmetics catalog card stroke. */
+    private static void configActionButtonsMatchCosmeticsCardThickness() throws Exception {
+        String configs = Files.readString(Path.of(
+                "src/main/java/vorga/phazeclient/implement/menu/components/implement/other/ConfigsViewComponent.java"));
+        String cosmetics = Files.readString(Path.of(
+                "src/main/java/vorga/phazeclient/implement/menu/components/implement/other/CosmeticsViewComponent.java"));
+        check(configs.contains("private static final float ACTION_BUTTON_OUTLINE_THICKNESS = 1.5F;"),
+                "config action buttons use the normal cosmetics card outline thickness");
+        check(configs.contains(".round(ACTION_BUTTON_RADIUS).thickness(ACTION_BUTTON_OUTLINE_THICKNESS)"),
+                "config action plates pass the shared outline thickness");
+        check(cosmetics.contains(".round(4.0F).thickness(1.5F + 0.7F * selectionProgress)"),
+                "normal cosmetics cards use 1.5px before their selected-state emphasis");
     }
 
     private static void linear(String png) throws Exception {
