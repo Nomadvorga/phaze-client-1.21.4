@@ -376,6 +376,11 @@ public class Main implements ModInitializer {
 
         configManager.loadCurrentConfig();
 
+        vorga.phazeclient.api.system.logging.FullLogRuntime.setEnabled(Settings.getInstance().fullLogs.isValue());
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(
+                vorga.phazeclient.api.system.logging.FullLogRuntime::tick
+        );
+
         // Auto-save: every Setting.notifyChange() (BindSetting.setKey,
         // BooleanSetting.setValue, sliders, color pickers, ...) flips the
         // dirty flag; flushIfDirty drains it on a tick if the debounce
@@ -432,6 +437,9 @@ public class Main implements ModInitializer {
         // successful clean stop (and lets it retry a failed final write).
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STOPPING.register(
                 client -> configManager.saveOnShutdown()
+        );
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STOPPING.register(
+                client -> vorga.phazeclient.api.system.logging.FullLog.stop()
         );
 
         discordManager.init();

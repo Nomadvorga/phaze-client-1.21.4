@@ -115,6 +115,8 @@ tasks.named('processTestResources') {
     def guiBenchOnly = project.hasProperty('guiBenchOnly')
     def guiBenchWorld = project.hasProperty('guiBenchWorld')
     def paperDollOnly = project.hasProperty('paperDollOnly')
+    def fullLogsOnly = project.hasProperty('fullLogsOnly')
+    inputs.property 'fullLogsOnly', fullLogsOnly
     inputs.property 'guiBenchWorld', guiBenchWorld
     inputs.property 'paperDollOnly', paperDollOnly
     inputs.property 'hudBlurOnly', blurOnly
@@ -122,8 +124,9 @@ tasks.named('processTestResources') {
     inputs.property 'hudEditorOnly', hudEditorOnly
     inputs.property 'bossBarOnly', bossBarOnly
     inputs.property 'guiBenchOnly', guiBenchOnly
-    if (blurOnly || textureFilterOnly || hudEditorOnly || bossBarOnly || guiBenchOnly || paperDollOnly) {
-        def selected = guiBenchOnly ? [guiBenchWorld ? 'GuiWorldBenchmarkClientTest' : 'GuiRenderBenchmarkClientTest']
+    if (blurOnly || textureFilterOnly || hudEditorOnly || bossBarOnly || guiBenchOnly || paperDollOnly || fullLogsOnly) {
+        def selected = fullLogsOnly ? ['FullLoggingClientTest']
+                : guiBenchOnly ? [guiBenchWorld ? 'GuiWorldBenchmarkClientTest' : 'GuiRenderBenchmarkClientTest']
                 : paperDollOnly ? ['PaperDollClientTest']
                 : hudEditorOnly
                 ? ['HudEditorClientTest', 'HudCachedReplayClientTest', 'RenderSafetyClientTest']
@@ -191,6 +194,7 @@ tasks.register('verifyWaypoints', JavaExec) {
 tasks.named('check') { dependsOn 'verifyWaypoints' }
 
 [
+    verifyFullLogs: 'vorga.phazeclient.api.system.logging.FullLogChecks',
     verifyGlintSettings: 'vorga.phazeclient.implement.features.modules.other.GlintSettingsChecks',
     verifyHandAnimationTransforms: 'vorga.phazeclient.implement.features.modules.other.HandAnimationTransformChecks',
     verifyProjectileLaunch: 'vorga.phazeclient.implement.features.modules.other.ProjectileLaunchChecks',
@@ -277,6 +281,13 @@ loom {
         }
     }
     runs {
+        fullLogsSmoke {
+            client()
+            source sourceSets.test
+            runDir 'build/full-logs-client-test'
+            vmArg '-Dfabric.client.gametest'
+            vmArg '-Dfabric.client.gametest.modid=phaze_preview_tests'
+        }
         packPreviewSmoke {
             client()
             source sourceSets.test

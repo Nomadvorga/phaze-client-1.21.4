@@ -2072,6 +2072,7 @@ public class MainMenuScreen extends TitleScreen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        vorga.phazeclient.api.system.logging.FullLogGui.input(this, "SCREEN_CLICK", mouseX, mouseY, "button=" + button);
         updateOverlayMetrics();
         float overlayMouseX = toOverlayCoordinate(mouseX);
         float overlayMouseY = toOverlayCoordinate(mouseY);
@@ -2166,6 +2167,7 @@ public class MainMenuScreen extends TitleScreen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        vorga.phazeclient.api.system.logging.FullLogGui.input(this, "SCREEN_RELEASE", mouseX, mouseY, "button=" + button);
         updateOverlayMetrics();
         if (themeSelectorOpen) {
             activeThemeSettingsSlider = ThemeSettingsSlider.NONE;
@@ -2176,6 +2178,8 @@ public class MainMenuScreen extends TitleScreen {
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        vorga.phazeclient.api.system.logging.FullLogGui.input(this, "SCREEN_DRAG", mouseX, mouseY,
+                "button=" + button + " dx=" + deltaX + " dy=" + deltaY);
         updateOverlayMetrics();
         if (themeSelectorOpen) {
             if (themeSelectorSettingsOpen && button == 0 && activeThemeSettingsSlider != ThemeSettingsSlider.NONE) {
@@ -2194,6 +2198,8 @@ public class MainMenuScreen extends TitleScreen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        vorga.phazeclient.api.system.logging.FullLogGui.input(this, "SCREEN_SCROLL", mouseX, mouseY,
+                "horizontal=" + horizontalAmount + " vertical=" + verticalAmount);
         updateOverlayMetrics();
         if (themeSelectorOpen) {
             if (!themeSelectorSettingsOpen) {
@@ -2380,6 +2386,16 @@ public class MainMenuScreen extends TitleScreen {
         private void phaze$setDimensions(int width, int height) {
             this.width = width;
             this.height = height;
+        }
+
+        @Override
+        public void onPress() {
+            if (vorga.phazeclient.api.system.logging.FullLog.isEnabled()) {
+                vorga.phazeclient.api.system.logging.FullLogGui.input(this, "BUTTON_PRESS", getX(), getY(),
+                        "label=" + getMessage().getString() + " icon=" + leftIcon
+                                + " width=" + getWidth() + " height=" + getHeight());
+            }
+            super.onPress();
         }
 
         @Override

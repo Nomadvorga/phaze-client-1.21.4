@@ -5,6 +5,7 @@
   "environment": "client",
   "entrypoints": {
     "fabric-client-gametest": [
+      "vorga.phazeclient.api.system.logging.FullLoggingClientTest",
       "vorga.phazeclient.implement.features.modules.other.PackPreviewClientTest",
       "vorga.phazeclient.implement.features.modules.other.GlintClientTest",
       "vorga.phazeclient.implement.features.modules.other.LowHealthClientTest",

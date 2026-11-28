@@ -131,6 +131,9 @@ public class Module extends SettingRepository implements QuickImports {
     }
 
     private void notifyStateChange() {
+        if (vorga.phazeclient.api.system.logging.FullLog.isEnabled()) {
+            vorga.phazeclient.api.system.logging.FullLogRuntime.moduleChanged(this);
+        }
         if (globalStateChangeListener != null) {
             globalStateChangeListener.accept(this);
         }
@@ -151,6 +154,9 @@ public class Module extends SettingRepository implements QuickImports {
         if (state != this.state) {
             this.state = state;
             toggleSilent(isEnabled());
+            if (vorga.phazeclient.api.system.logging.FullLog.isEnabled()) {
+                vorga.phazeclient.api.system.logging.FullLogRuntime.moduleChanged(this);
+            }
         }
     }
 

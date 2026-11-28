@@ -767,6 +767,9 @@ public final class Lang {
         SETTING_TRANSLATIONS.put("GUI themes, scale, language, blur, and loading screen settings",
                 "Настройки темы интерфейса, масштаба, языка, размытия и экрана загрузки");
         SETTING_TRANSLATIONS.put("Custom Loading Screen", "Своя заставка загрузки");
+        SETTING_TRANSLATIONS.put("Full Logs", "Полные логи");
+        SETTING_TRANSLATIONS.put("Summarize mixin calls, player actions, Phaze GUI and errors once per second in Phaze/logs. Managed logs are limited to 64 MiB",
+                "Раз в секунду записывать сводку вызовов миксинов, действий игрока, GUI Phaze и ошибок в Phaze/logs. Новые логи ограничены 64 МиБ");
         SETTING_TRANSLATIONS.put("Use the custom Phaze splash screen instead of Minecraft's vanilla screen",
                 "Использовать заставку Phaze вместо стандартного экрана загрузки Minecraft");
         SETTING_TRANSLATIONS.put("Customize entity hitbox color", "Свой цвет хитбокса сущностей");

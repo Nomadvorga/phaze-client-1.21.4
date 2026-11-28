@@ -82,6 +82,9 @@ public class Setting {
     }
 
     protected void notifyChange() {
+        if (vorga.phazeclient.api.system.logging.FullLog.isEnabled()) {
+            vorga.phazeclient.api.system.logging.FullLogRuntime.settingChanged(this);
+        }
         if (globalChangeListener != null) {
             globalChangeListener.accept(this);
         }

@@ -10,6 +10,7 @@
 !/gradle.properties
 !/LICENSE
 !/THIRD_PARTY_LICENSES.md
+!/FULL_LOGGING.md
 
 # build.gradle reads these: signed module manifest verification and a test source.
 !/scripts/

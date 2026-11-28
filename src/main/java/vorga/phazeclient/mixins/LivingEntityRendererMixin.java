@@ -86,6 +86,11 @@ public abstract class LivingEntityRendererMixin<
             int overlay = LivingEntityRenderer.getOverlay(livingEntityRenderState, this.getAnimationCounter(livingEntityRenderState));
             rendered.setOverlay(overlay);
             OverlayReloadListener.event();
+            if (vorga.phazeclient.api.system.logging.FullLog.isEnabled()) {
+                vorga.phazeclient.api.system.logging.FullLog.event("FEATURE_APPLIED",
+                        "HitColor LivingEntityRendererMixin#phaze$renderFeatureWithHitColorOverlay RETURN_OK overlay="
+                                + overlay + " renderer=" + featureRenderer.getClass().getName());
+            }
         }
 
         original.call(featureRenderer, matrices, vertexConsumers, light, entityRenderState, limbAngle, limbDistance);

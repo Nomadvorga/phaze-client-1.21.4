@@ -40,6 +40,10 @@ public final class MenuLocalizationChecks {
                         "Settings description follows the active locale");
             }
             Lang.setActive(Lang.RU);
+            check(settings.fullLogs.getName().equals("Полные логи"), "full logging setting label is localized");
+            check(!settings.fullLogs.isValue(), "full diagnostic logging defaults to off");
+            check(settings.fullLogs.getRawName().equals("Full Logs") && settings.fullLogs.isSaveToConfig(),
+                    "full logs uses a persistent, language-independent config key");
             check(settings.customLoadingScreen.getName().equals("Своя заставка загрузки"),
                     "custom loading setting label is localized");
             check(settings.customLoadingScreen.getDescription().equals(

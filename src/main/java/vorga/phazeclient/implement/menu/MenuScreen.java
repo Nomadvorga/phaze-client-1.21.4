@@ -593,6 +593,7 @@ public class MenuScreen extends Screen implements QuickImports {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        vorga.phazeclient.api.system.logging.FullLogGui.input(this, "SCREEN_CLICK", mouseX, mouseY, "button=" + button);
         updateOverlayMetrics();
         double overlayMouseX = toMenuCoordinateX(mouseX);
         double overlayMouseY = toMenuCoordinateY(mouseY);
@@ -709,6 +710,7 @@ public class MenuScreen extends Screen implements QuickImports {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        vorga.phazeclient.api.system.logging.FullLogGui.input(this, "SCREEN_RELEASE", mouseX, mouseY, "button=" + button);
         updateOverlayMetrics();
         double overlayMouseX = toMenuCoordinateX(mouseX);
         double overlayMouseY = toMenuCoordinateY(mouseY);
@@ -745,6 +747,8 @@ public class MenuScreen extends Screen implements QuickImports {
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        vorga.phazeclient.api.system.logging.FullLogGui.input(this, "SCREEN_DRAG", mouseX, mouseY,
+                "button=" + button + " dx=" + deltaX + " dy=" + deltaY);
         updateOverlayMetrics();
         double overlayMouseX = toMenuCoordinateX(mouseX);
         double overlayMouseY = toMenuCoordinateY(mouseY);
@@ -803,6 +807,8 @@ public class MenuScreen extends Screen implements QuickImports {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
+        vorga.phazeclient.api.system.logging.FullLogGui.input(this, "SCREEN_SCROLL", mouseX, mouseY,
+                "horizontal=" + horizontal + " vertical=" + vertical);
         // Dynamic cursor: announce the wheel event to the cursor
         // manager so it can flip the OS pointer to the vertical/
         // horizontal resize shape for the duration of the spin. The

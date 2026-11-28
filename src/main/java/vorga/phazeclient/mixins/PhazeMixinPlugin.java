@@ -186,24 +186,34 @@ public final class PhazeMixinPlugin implements IMixinConfigPlugin {
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
         if (SODIUM_LOADED && VANILLA_ONLY.contains(mixinClassName)) {
+            recordSkipped(targetClassName, mixinClassName, "Sodium replaces vanilla renderer");
             return false;
         }
         if (!SODIUM_LOADED && SODIUM_ONLY.contains(mixinClassName)) {
+            recordSkipped(targetClassName, mixinClassName, "Sodium absent");
             return false;
         }
         if (!IRIS_LOADED && IRIS_ONLY.contains(mixinClassName)) {
+            recordSkipped(targetClassName, mixinClassName, "Iris absent");
             return false;
         }
         if (!EXORDIUM_LOADED && EXORDIUM_ONLY.contains(mixinClassName)) {
+            recordSkipped(targetClassName, mixinClassName, "Exordium absent");
             return false;
         }
         if (!REESES_LOADED && REESES_ONLY.contains(mixinClassName)) {
+            recordSkipped(targetClassName, mixinClassName, "Reese's Sodium Options absent");
             return false;
         }
         if (SCREENCOPY_MOD_LOADED && SKIP_IF_SCREENCOPY_MOD.contains(mixinClassName)) {
+            recordSkipped(targetClassName, mixinClassName, "standalone screencopy owns this hook");
             return false;
         }
         return true;
+    }
+
+    private static void recordSkipped(String target, String mixin, String reason) {
+        vorga.phazeclient.api.system.logging.FullLog.mixinSetup("SKIPPED " + mixin + " -> " + target + " reason=" + reason);
     }
 
     @Override
@@ -220,11 +230,13 @@ public final class PhazeMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public void preApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {
-        // No-op.
+        vorga.phazeclient.api.system.logging.FullLog.mixinSetup("APPLY_BEGIN " + mixinClassName + " -> " + targetClassName);
     }
 
     @Override
     public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {
-        // No-op.
+        int methods = vorga.phazeclient.api.system.logging.MixinLogTransformer.instrument(targetClass, mixinClassName);
+        vorga.phazeclient.api.system.logging.FullLog.mixinSetup("APPLIED_OK " + mixinClassName + " -> "
+                + targetClassName + " tracedMethods=" + methods);
     }
 }

@@ -17,6 +17,9 @@
   "license": "MIT",
   "environment": "*",
   "entrypoints": {
+    "preLaunch": [
+      "vorga.phazeclient.api.system.logging.FullLogBootstrap"
+    ],
     "main": [
       "vorga.phazeclient.core.Main"
     ],

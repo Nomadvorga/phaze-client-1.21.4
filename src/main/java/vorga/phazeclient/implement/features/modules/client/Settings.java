@@ -93,6 +93,11 @@ public final class Settings extends Module {
             "Use the custom Phaze splash screen instead of Minecraft's vanilla screen"
     ).setValue(true).onChange(MenuUiSettings::syncCustomLoadingScreenEnabled);
 
+    public final BooleanSetting fullLogs = new BooleanSetting(
+            "Full Logs",
+            "Summarize mixin calls, player actions, Phaze GUI and errors once per second in Phaze/logs. Managed logs are limited to 64 MiB"
+    ).setValue(false).onChange(vorga.phazeclient.api.system.logging.FullLogRuntime::setEnabled);
+
     private Settings() {
         super("themes", "Settings", ModuleCategory.OTHER, false, false);
         hudTextColor.setFullWidth(true);
@@ -100,8 +105,9 @@ public final class Settings extends Module {
         guiScale.setFullWidth(true);
         renderOtherPlayerCosmetics.setFullWidth(true);
         customLoadingScreen.setFullWidth(true);
+        fullLogs.setFullWidth(true);
         setup(menuTheme, blurRadius, language, hudTextColor, guiScale, renderOtherPlayerCosmetics,
-                customLoadingScreen);
+                customLoadingScreen, fullLogs);
 
         // Push the initial selection through to the Lang table so
         // any code reading {@link Lang#t} during boot sees the
