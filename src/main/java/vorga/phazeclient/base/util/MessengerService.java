@@ -27,7 +27,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 
@@ -131,7 +135,7 @@ public final class MessengerService {
 
     private record HttpResult(int status, String body) {}
 
-    private final ExecutorService io = Executors.newSingleThreadExecutor(r -> {
+    private final ScheduledExecutorService io = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread thread = new Thread(r, "phaze-messenger-io");
         thread.setDaemon(true);
         return thread;
@@ -173,6 +177,10 @@ public final class MessengerService {
 
     private volatile String token;
     private volatile boolean streamConnected;
+    private volatile boolean stateLoaded;
+    /** Only the I/O executor touches the retry task and its backoff. No polling after a successful load. */
+    private ScheduledFuture<?> stateRetry;
+    private long stateRetryDelayMs = 5_000L;
     private volatile boolean shareServer;
     private volatile String status = "Offline";
     private volatile long statusChangedAt;
@@ -1011,27 +1019,70 @@ public final class MessengerService {
     }
 
     private void ensureSessionAndRefresh() {
-        if (!ensureSessionSync()) {
-            // Retried by the stream loop, which re-bootstraps once a session exists.
+        try {
+            refreshState();
+        } finally {
             startStream();
-            return;
         }
-        if (!bootstrap()) {
-            refreshFriends();
-            refreshRequests();
-            refreshBlocked();
-            refreshConversations();
-            loadGlobalMessages();
-        }
-        preloadAvatars();
-        startStream();
     }
 
-    /** One request for the whole messenger state; false only when the server predates it. */
+    private void refreshState() {
+        if (stateRetry != null) {
+            stateRetry.cancel(false);
+            stateRetry = null;
+        }
+        boolean loaded = false;
+        try {
+            if (ensureSessionSync()) {
+                loaded = bootstrap();
+                if (!loaded) {
+                    loaded = refreshStatePart("friends", this::refreshFriends);
+                    loaded &= refreshStatePart("requests", this::refreshRequests);
+                    loaded &= refreshStatePart("blocked users", this::refreshBlocked);
+                    loaded &= refreshStatePart("conversations", this::refreshConversations);
+                    loaded &= refreshStatePart("groups", this::refreshGroups);
+                    loaded &= refreshStatePart("global history", this::loadGlobalMessages);
+                }
+            }
+        } catch (RuntimeException failure) {
+            LOG.warn("Messenger state could not be loaded", failure);
+        }
+        stateLoaded = loaded;
+        if (loaded) {
+            stateRetryDelayMs = 5_000L;
+        } else if (!io.isShutdown()) {
+            long delay = stateRetryDelayMs;
+            stateRetryDelayMs = Math.min(300_000L, delay * 2L);
+            stateRetry = io.schedule(this::refreshState, delay, TimeUnit.MILLISECONDS);
+        }
+        try {
+            preloadAvatars();
+        } catch (RuntimeException failure) {
+            LOG.debug("Messenger avatars could not be preloaded", failure);
+        }
+    }
+
+    private boolean refreshStatePart(String name, BooleanSupplier refresh) {
+        try {
+            return refresh.getAsBoolean();
+        } catch (RuntimeException malformed) {
+            LOG.warn("Messenger {} could not be parsed", name, malformed);
+            return false;
+        }
+    }
+
+    private boolean stateResponseOk(HttpResult result, String name) {
+        if (result.status == 200) return true;
+        if (result.status == 401) token = null;
+        LOG.warn("Messenger {} unavailable: HTTP {}", name, result.status);
+        return false;
+    }
+
+    /** One request for the whole messenger state; failures use the individual endpoints and retry. */
     private boolean bootstrap() {
         HttpResult result = request("GET", "/api/chat/bootstrap", null, true);
-        if (result.status == 401) token = null;
-        if (result.status != 200) return false;
+        if (result.status == 404) return false; // Compatibility with servers predating bootstrap.
+        if (!stateResponseOk(result, "bootstrap")) return false;
         try {
             JsonObject root = JsonParser.parseString(result.body).getAsJsonObject();
             List<Friend> nextFriends = new ArrayList<>();
@@ -1108,7 +1159,7 @@ public final class MessengerService {
             if (selected != null) markRead(selected);
             return true;
         } catch (RuntimeException malformed) {
-            LOG.debug("Messenger bootstrap could not be parsed", malformed);
+            LOG.warn("Messenger bootstrap could not be parsed", malformed);
             return false;
         }
     }
@@ -1138,9 +1189,9 @@ public final class MessengerService {
         SkinAvatarService.getInstance().preload(usernames);
     }
 
-    private void refreshFriends() {
+    private boolean refreshFriends() {
         HttpResult result = request("GET", "/api/chat/friends", null, true);
-        if (result.status != 200) return;
+        if (!stateResponseOk(result, "friends")) return false;
         JsonArray array = JsonParser.parseString(result.body).getAsJsonObject().getAsJsonArray("friends");
         List<Friend> next = new ArrayList<>();
         for (JsonElement element : array) {
@@ -1155,11 +1206,12 @@ public final class MessengerService {
         synchronized (listLock) {
             friends = List.copyOf(next);
         }
+        return true;
     }
 
-    private void refreshRequests() {
+    private boolean refreshRequests() {
         HttpResult result = request("GET", "/api/chat/friends/requests", null, true);
-        if (result.status != 200) return;
+        if (!stateResponseOk(result, "requests")) return false;
         JsonObject root = JsonParser.parseString(result.body).getAsJsonObject();
         List<FriendRequest> next = new ArrayList<>();
         for (JsonElement element : root.getAsJsonArray("requests")) {
@@ -1181,22 +1233,25 @@ public final class MessengerService {
         next.forEach(request -> names.add(request.requesterUsername()));
         nextOutgoing.forEach(request -> names.add(request.targetUsername()));
         SkinAvatarService.getInstance().preload(names);
+        return true;
     }
 
-    private void refreshBlocked() {
+    private boolean refreshBlocked() {
         HttpResult result = request("GET", "/api/chat/friends/blocked", null, true);
-        if (result.status != 200) return;
+        if (!stateResponseOk(result, "blocked users")) return false;
         JsonArray array = JsonParser.parseString(result.body).getAsJsonObject().getAsJsonArray("blocked");
         List<Friend> next = new ArrayList<>();
         for (JsonElement element : array) next.add(friendOf(element.getAsJsonObject()));
         synchronized (listLock) {
             blocked = List.copyOf(next);
         }
+        return true;
     }
 
-    private void refreshGroups() {
+    private boolean refreshGroups() {
         HttpResult result = request("GET", "/api/chat/groups", null, true);
-        if (result.status != 200) return;
+        if (result.status == 404) return true; // Older servers have no group support.
+        if (!stateResponseOk(result, "groups")) return false;
         JsonObject root = JsonParser.parseString(result.body).getAsJsonObject();
         List<Group> next = new ArrayList<>();
         for (JsonElement element : root.getAsJsonArray("groups")) {
@@ -1214,12 +1269,14 @@ public final class MessengerService {
             groups = List.copyOf(next);
             groupInvites = List.copyOf(nextInvites);
         }
+        return true;
     }
 
-    private void loadGlobalMessages() {
+    private boolean loadGlobalMessages() {
         HttpResult result = request("GET", "/api/chat/global/messages?limit=100", null, true);
-        if (result.status != 200) return;
+        if (!stateResponseOk(result, "global history")) return false;
         globalMessages = messageList(JsonParser.parseString(result.body).getAsJsonObject().getAsJsonArray("messages"));
+        return true;
     }
 
     private boolean ensureSessionSync() {
@@ -1285,12 +1342,11 @@ public final class MessengerService {
         }
     }
 
-    private void refreshConversations() {
+    private boolean refreshConversations() {
         HttpResult result = request("GET", "/api/chat/conversations", null, true);
-        if (result.status != 200) {
-            if (result.status == 401) token = null;
+        if (!stateResponseOk(result, "conversations")) {
             setStatus(parseError(result.body, "Conversations unavailable"));
-            return;
+            return false;
         }
         JsonArray array = JsonParser.parseString(result.body).getAsJsonObject().getAsJsonArray("conversations");
         List<Conversation> next = new ArrayList<>();
@@ -1298,6 +1354,7 @@ public final class MessengerService {
         synchronized (listLock) {
             conversations = List.copyOf(next);
         }
+        return true;
     }
 
     private void loadMessages(String conversationId) {
@@ -1314,13 +1371,7 @@ public final class MessengerService {
             boolean resync = false;
             while (!Thread.currentThread().isInterrupted()) {
                 try {
-                    if (resync && ensureSessionSync()) {
-                        // Events missed while disconnected are recovered with one bootstrap.
-                        io.execute(() -> {
-                            if (bootstrap()) preloadAvatars();
-                        });
-                    }
-                    listenStream();
+                    listenStream(resync);
                     backoff = 5_000L;
                 } catch (Throwable throwable) {
                     setStatus("Messenger reconnecting");
@@ -1338,7 +1389,7 @@ public final class MessengerService {
         });
     }
 
-    private void listenStream() throws Exception {
+    private void listenStream(boolean resync) throws Exception {
         if (!ensureSessionSync()) throw new IllegalStateException("no chat session");
         HttpURLConnection connection = (HttpURLConnection) URI.create(
                 RemoteRulesService.getInstance().getApiBase() + "/api/chat/events"
@@ -1356,6 +1407,10 @@ public final class MessengerService {
             if (code != 200) throw new IllegalStateException("SSE " + code);
             setStatus("Online");
             streamConnected = true;
+            if (resync || !stateLoaded) {
+                // Also covers a session that first succeeded here after the startup login failed.
+                io.execute(this::refreshState);
+            }
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                     connection.getInputStream(), StandardCharsets.UTF_8))) {
                 String event = null;

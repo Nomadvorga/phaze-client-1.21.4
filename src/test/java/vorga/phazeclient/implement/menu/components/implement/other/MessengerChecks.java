@@ -13,8 +13,11 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 
 /**
@@ -23,11 +26,21 @@ import java.util.function.BooleanSupplier;
  */
 public final class MessengerChecks {
     private static final List<String> calls = new CopyOnWriteArrayList<>();
+    private static final CountDownLatch closeStreams = new CountDownLatch(1);
+    private static final AtomicInteger sessionFailures = new AtomicInteger();
+    private static final AtomicInteger historyFailures = new AtomicInteger();
+    private static volatile int bootstrapStatus = 200;
+    private static final String SAVED_GROUP_ID = "1234567890abcdef1234567890abcdef";
     private static int checks;
 
     public static void main(String[] args) throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/", MessengerChecks::handle);
+        server.setExecutor(Executors.newCachedThreadPool(task -> {
+            Thread thread = new Thread(task, "messenger-check-api");
+            thread.setDaemon(true);
+            return thread;
+        }));
         server.start();
         System.setProperty("phaze.rules.api", "http://127.0.0.1:" + server.getAddress().getPort());
         try {
@@ -35,7 +48,9 @@ public final class MessengerChecks {
             errorLines();
             serverModeration();
             socialFeatures();
+            startupState();
         } finally {
+            closeStreams.countDown();
             server.stop(0);
             MessengerService.getInstance().stop();
         }
@@ -252,6 +267,76 @@ public final class MessengerChecks {
         return result.get(10, TimeUnit.SECONDS);
     }
 
+    private static MessengerService isolatedService() throws Exception {
+        var constructor = MessengerService.class.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        return constructor.newInstance();
+    }
+
+    /** A live stream must not leave the initial snapshot missing for the entire game launch. */
+    private static void startupState() throws Exception {
+        calls.clear();
+        MessengerService healthy = isolatedService();
+        try {
+            healthy.start();
+            waitFor(healthy::isConnected, "a healthy startup opens the stream");
+            check(healthy.getGroup(SAVED_GROUP_ID) != null && healthy.getGlobalMessages().size() == 1,
+                    "bootstrap restores saved groups and global history");
+            check(healthy.getMessages(SAVED_GROUP_ID).size() == 1, "bootstrap restores group history");
+            check(calls.stream().filter(call -> call.equals("GET /api/chat/bootstrap")).count() == 1,
+                    "a healthy launch needs only one snapshot");
+        } finally {
+            healthy.stop();
+        }
+
+        bootstrapStatus = 503;
+        calls.clear();
+        MessengerService fallback = isolatedService();
+        try {
+            fallback.start();
+            waitFor(fallback::isConnected, "the fallback startup opens the stream");
+            check(fallback.getGroup(SAVED_GROUP_ID) != null,
+                    "fallback restores saved groups when bootstrap fails");
+            check(fallback.getGlobalMessages().size() == 1, "fallback restores saved global messages");
+            fallback.selectConversation(SAVED_GROUP_ID);
+            waitFor(() -> fallback.getMessages(SAVED_GROUP_ID).size() == 1,
+                    "a saved group's history loads after fallback");
+        } finally {
+            fallback.stop();
+        }
+
+        historyFailures.set(2);
+        calls.clear();
+        MessengerService retry = isolatedService();
+        try {
+            retry.start();
+            waitFor(retry::isConnected, "the stream stays available after a history failure");
+            waitFor(() -> retry.getGlobalMessages().size() == 1,
+                    "failed history loading recovers while the stream remains connected", 20_000L);
+            check(retry.getGroup(SAVED_GROUP_ID) != null, "history recovery keeps saved groups");
+            check(calls.stream().filter(call -> call.equals("GET /api/chat/events")).count() == 1,
+                    "recovering the snapshot does not need a stream disconnect");
+            check(calls.stream().filter(call -> call.equals("GET /api/chat/global/messages")).count() == 3,
+                    "a scheduled retry restores history after both startup and connect-time failures");
+        } finally {
+            retry.stop();
+        }
+
+        bootstrapStatus = 200;
+        sessionFailures.set(1);
+        calls.clear();
+        MessengerService lateSession = isolatedService();
+        try {
+            lateSession.start();
+            waitFor(lateSession::isConnected, "the stream retries the initial failed login");
+            waitFor(() -> lateSession.getGroup(SAVED_GROUP_ID) != null
+                            && lateSession.getGlobalMessages().size() == 1,
+                    "a session recovered by the stream still loads the initial snapshot");
+        } finally {
+            lateSession.stop();
+        }
+    }
+
     private static void handle(HttpExchange exchange) throws IOException {
         String method = exchange.getRequestMethod();
         String path = exchange.getRequestURI().getPath();
@@ -261,8 +346,24 @@ public final class MessengerChecks {
                 : json.has("requestId") ? json.get("requestId").getAsString() : "";
         lastBody = body;
         calls.add((method + " " + path + " " + argument).trim());
+        if (method.equals("GET") && path.equals("/api/chat/events")) {
+            exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+            exchange.sendResponseHeaders(200, 0);
+            try (OutputStream output = exchange.getResponseBody()) {
+                output.write("event: hello\ndata: {}\n\n".getBytes(StandardCharsets.UTF_8));
+                output.flush();
+                closeStreams.await();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+            return;
+        }
         if (path.startsWith("/api/chat/conversations/") && path.endsWith("/read")) {
             reply(exchange, 200, "{\"sequence\":4}");
+            return;
+        }
+        if (method.equals("GET") && path.equals("/api/chat/conversations/" + SAVED_GROUP_ID + "/messages")) {
+            reply(exchange, 200, "{\"messages\":[" + savedMessage() + "]}");
             return;
         }
         if (method.equals("GET") && path.equals("/api/chat/conversations/" + JOINED_ID + "/messages")) {
@@ -278,8 +379,30 @@ public final class MessengerChecks {
             case "POST /api/chat/challenge" -> reply(exchange, 404, "{\"error\":\"not_found\"}");
             case "POST /api/chat/global/messages" -> reply(exchange, 422,
                     "{\"error\":\"message_rejected\",\"reason\":\"abusive_content\"}");
-            case "POST /api/chat/session" -> reply(exchange, 201,
-                    "{\"token\":\"t\",\"user\":{\"id\":\"me\",\"username\":\"Tester\"}}");
+            case "POST /api/chat/session" -> {
+                if (sessionFailures.getAndUpdate(value -> Math.max(0, value - 1)) > 0) {
+                    reply(exchange, 503, "{\"error\":\"temporarily_unavailable\"}");
+                } else {
+                    reply(exchange, 201, "{\"token\":\"t\",\"user\":{\"id\":\"me\",\"username\":\"Tester\"}}");
+                }
+            }
+            case "GET /api/chat/bootstrap" -> reply(exchange, bootstrapStatus, bootstrapStatus == 200
+                    ? "{\"friends\":[],\"requests\":[],\"outgoing\":[],\"blocked\":[],\"blockedBy\":[],"
+                    + "\"conversations\":[],\"groups\":[" + group(SAVED_GROUP_ID, "Saved") + "],\"groupInvites\":[],"
+                    + "\"messages\":{\"" + SAVED_GROUP_ID + "\":[" + savedMessage() + "]},"
+                    + "\"global\":{\"messages\":[" + savedMessage() + "]}}"
+                    : "{\"error\":\"temporarily_unavailable\"}");
+            case "GET /api/chat/groups" -> reply(exchange, 200,
+                    "{\"groups\":[" + group(SAVED_GROUP_ID, "Saved") + "],\"invites\":[]}");
+            case "GET /api/chat/global/messages" -> {
+                if (historyFailures.getAndUpdate(value -> Math.max(0, value - 1)) > 0) {
+                    reply(exchange, 503, "{\"error\":\"temporarily_unavailable\"}");
+                } else {
+                    reply(exchange, 200, "{\"messages\":[" + savedMessage() + "]}");
+                }
+            }
+            case "GET /api/chat/friends/blocked" -> reply(exchange, 200, "{\"blocked\":[]}");
+            case "GET /api/chat/conversations" -> reply(exchange, 200, "{\"conversations\":[]}");
             case "POST /api/chat/friends/requests" -> {
                 switch (argument) {
                     case "bob" -> reply(exchange, 201, "{\"status\":\"created\"}");
@@ -311,6 +434,11 @@ public final class MessengerChecks {
 
     private static volatile String lastBody = "";
 
+    private static String savedMessage() {
+        return "{\"id\":901,\"sequence\":1,\"senderId\":\"carol\",\"senderUsername\":\"Carol\","
+                + "\"text\":\"Saved history\",\"createdAt\":1}";
+    }
+
     private static String group(String id, String name) {
         return "{\"id\":\"" + id + "\",\"name\":\"" + name + "\",\"ownerId\":\"me\",\"createdAt\":1,\"updatedAt\":1,"
                 + "\"members\":[{\"id\":\"me\",\"username\":\"Tester\",\"role\":\"owner\",\"joinedAt\":1,\"online\":true,\"server\":null}]}";
@@ -326,7 +454,11 @@ public final class MessengerChecks {
     }
 
     private static void waitFor(BooleanSupplier condition, String message) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + 10_000L;
+        waitFor(condition, message, 10_000L);
+    }
+
+    private static void waitFor(BooleanSupplier condition, String message, long timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
         while (!condition.getAsBoolean()) {
             if (System.currentTimeMillis() > deadline) throw new AssertionError("timed out: " + message);
             Thread.sleep(10L);

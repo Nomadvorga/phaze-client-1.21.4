@@ -50,7 +50,7 @@ public class MainMenuScreen extends TitleScreen {
     private static final Identifier ICON_SINGLE = Identifier.of("phaze", "textures/menu/user.png");
     private static final Identifier ICON_MULTI = Identifier.of("phaze", "textures/menu/users.png");
     private static final Identifier ICON_TAB = Identifier.of("phaze", "textures/menu/tab.png");
-    private static final Identifier ICON_SETTINGS = Identifier.of("phaze", "textures/menu/settings.png");
+    private static final Identifier ICON_SETTINGS = Identifier.of("phaze", "textures/menu/settings_filled.png");
     private static final Identifier ICON_CUBE = Identifier.of("phaze", "textures/menu/cube.png");
     private static final Identifier ICON_EXTERNAL = Identifier.of("phaze", "textures/menu/arrow_external_bold.png");
     private static final Identifier ICON_LOGOUT = Identifier.of("phaze", "textures/menu/logout.png");
@@ -76,8 +76,8 @@ public class MainMenuScreen extends TitleScreen {
     private static final float THEME_RESET_ICON_SIZE = 11.0F * 1.6F;
     private static final float THEME_RESET_ICON_GAP = 4.0F;
     private static final float THEME_ACTION_SIZE = 18.0F;
-    private static final float THEME_SETTINGS_ICON_SIZE = 13.0F;
-    private static final float THEME_CLOSE_ICON_SIZE = (13.0F / (1.2F * 1.1F)) * (2.5F / 1.2F) / 1.15F;
+    /** Match visible icon height; atlas cells have different transparent margins. */
+    private static final float THEME_ACTION_ICON_INK_SIZE = 11.0F;
     private static final float THEME_CARD_NAME_OFFSET = 6.0F;
     private static final float THEME_CARD_NAME_SIZE = 8.6F;
     private static final float THEME_CARD_BADGE_SIZE = 11.0F;
@@ -783,7 +783,7 @@ public class MainMenuScreen extends TitleScreen {
         boolean closeHovered = themeSelectorInteractive && isPointInside(mouseX, mouseY, layout.closeX, layout.closeY, layout.closeSize, layout.closeSize);
         themeSelectorSettingsHoverAnim = animateThemeUiValue(themeSelectorSettingsHoverAnim, settingsHovered ? 1.0F : 0.0F);
         themeSelectorCloseHoverAnim = animateThemeUiValue(themeSelectorCloseHoverAnim, closeHovered ? 1.0F : 0.0F);
-        renderIconInkCentered(context, ICON_SETTINGS, layout.settingsCenterX, layout.actionCenterY, THEME_SETTINGS_ICON_SIZE * layout.scale,
+        renderIconInkCentered(context, ICON_SETTINGS, layout.settingsCenterX, layout.actionCenterY, themeActionIconHeight(ICON_SETTINGS, layout.scale),
                 scaleColorAlpha(lerpArgb(ICON_TINT_COLOR, 0xFFFFFFFF, themeSelectorSettingsHoverAnim), modalAlpha));
         renderThemeCloseIcon(context, layout.closeCenterX, layout.actionCenterY, layout.scale, themeSelectorCloseHoverAnim, modalAlpha);
 
@@ -1212,7 +1212,7 @@ public class MainMenuScreen extends TitleScreen {
                 ICON_CROSS,
                 centerX,
                 centerY,
-                THEME_CLOSE_ICON_SIZE * scale,
+                themeActionIconHeight(ICON_CROSS, scale),
                 scaleColorAlpha(lerpArgb(ICON_TINT_COLOR, 0xFFFFFFFF, hoverAnim), alpha),
                 0.04F,
                 0.38F
@@ -1638,6 +1638,10 @@ public class MainMenuScreen extends TitleScreen {
         return new FittedIconRect(drawX, drawY, drawWidth, drawHeight);
     }
 
+    private static float themeActionIconHeight(Identifier icon, float scale) {
+        return THEME_ACTION_ICON_INK_SIZE * scale / Math.max(0.0001F, UiMsdfIconAtlas.ink(icon).height());
+    }
+
     private static float iconInkWidth(Identifier icon, float height) {
         return height * getIconAspectRatio(icon) * UiMsdfIconAtlas.ink(icon).width();
     }
@@ -1851,8 +1855,8 @@ public class MainMenuScreen extends TitleScreen {
         float titleCapCenterY = l.titleY + capHeight(THEME_TITLE_TEXT_SIZE * scale) * 0.5F;
         l.actionCenterY = titleCapCenterY;
         l.actionSize = THEME_ACTION_SIZE * scale;
-        float closeInkW = iconInkWidth(ICON_CROSS, THEME_CLOSE_ICON_SIZE * scale);
-        float settingsInkW = iconInkWidth(ICON_SETTINGS, THEME_SETTINGS_ICON_SIZE * scale);
+        float closeInkW = iconInkWidth(ICON_CROSS, themeActionIconHeight(ICON_CROSS, scale));
+        float settingsInkW = iconInkWidth(ICON_SETTINGS, themeActionIconHeight(ICON_SETTINGS, scale));
         l.closeCenterX = l.contentRight - closeInkW * 0.5F;
         l.settingsCenterX = l.closeCenterX - closeInkW * 0.5F - gap - settingsInkW * 0.5F;
         l.closeX = l.closeCenterX - l.actionSize * 0.5F;
@@ -1923,7 +1927,7 @@ public class MainMenuScreen extends TitleScreen {
 
         l.titleY = l.panelY + inset;
         l.closeSize = THEME_ACTION_SIZE * scale;
-        float closeInkW = iconInkWidth(ICON_CROSS, THEME_CLOSE_ICON_SIZE * scale);
+        float closeInkW = iconInkWidth(ICON_CROSS, themeActionIconHeight(ICON_CROSS, scale));
         l.closeCenterX = l.contentRight - closeInkW * 0.5F;
         l.closeCenterY = l.titleY + titleCap * 0.5F;
         l.closeX = l.closeCenterX - l.closeSize * 0.5F;

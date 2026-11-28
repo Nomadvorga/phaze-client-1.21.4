@@ -79,6 +79,9 @@ public final class MessengerViewComponent extends AbstractComponent {
     private static final float COMPACT_FRIEND_ROW = 18.0F;
     private static final float COMPACT_FRIEND_STEP = 20.0F;
     private static final float COMPACT_FRIEND_HEADER = 14.0F;
+    private static final float COMPACT_FRIEND_AVATAR_SIZE = 15.0F;
+    private static final float COMPACT_FRIEND_AVATAR_INSET = (COMPACT_FRIEND_ROW - COMPACT_FRIEND_AVATAR_SIZE) / 2.0F;
+    private static final float COMPACT_FRIEND_TEXT_INSET = COMPACT_FRIEND_AVATAR_INSET + COMPACT_FRIEND_AVATAR_SIZE + 5.0F;
     private static final float COMPACT_FRIEND_NAME_OFFSET = (COMPACT_FRIEND_ROW - (7.0F + 4.8F)) / 2.0F;
     private static final float COMPACT_FRIEND_STATUS_OFFSET = COMPACT_FRIEND_NAME_OFFSET + 7.0F;
     private static final float FRIEND_CARD_HEIGHT = AbstractSettingComponent.ROW_HEIGHT;
@@ -97,7 +100,7 @@ public final class MessengerViewComponent extends AbstractComponent {
     private static final float REQUEST_ICON_SIZE = 7.0F;
     private static final Identifier ACCEPT_ICON = Identifier.of("phaze", "textures/menu/check.png");
     private static final Identifier DECLINE_ICON = Identifier.of("phaze", "textures/menu/cross.png");
-    private static final Identifier SETTINGS_ICON = Identifier.of("phaze", "textures/menu/settings.png");
+    private static final Identifier SETTINGS_ICON = Identifier.of("phaze", "textures/menu/settings_outline.png");
     private static final Identifier POINT_ICON = Identifier.of("phaze", "textures/modules/death_coords.png");
     private static final Identifier DEATH_ICON = Identifier.of("phaze", "textures/modules/skull-outline.png");
     private static final Identifier CONFIG_ICON = Identifier.ofVanilla("textures/file.png");
@@ -508,13 +511,17 @@ public final class MessengerViewComponent extends AbstractComponent {
         boolean hovered = insideList(mouseX, mouseY, rowX, rowY, rowW, COMPACT_FRIEND_ROW);
         float hover = animatedHover("compact:" + friend.id(), hovered);
         if (hover > 0.0F) drawChatCard(context, rowX, rowY, rowW, COMPACT_FRIEND_ROW, hover, hover);
-        renderAvatar(context, rowX, rowY, 15.0F, friend.id(), friend.username());
+        renderAvatar(context, rowX + COMPACT_FRIEND_AVATAR_INSET, rowY + COMPACT_FRIEND_AVATAR_INSET,
+                COMPACT_FRIEND_AVATAR_SIZE, friend.id(), friend.username());
+        float textX = rowX + COMPACT_FRIEND_TEXT_INSET;
+        // MSDF y is the cap top; centre both visible text lines on the avatar.
+        float nameY = rowY + (COMPACT_FRIEND_ROW - (7.0F + 4.8F * 0.7F)) / 2.0F;
         drawMarqueeLabel(context, "compact:" + friend.id(), friend.username(), 5.0F,
-                rowX + 20.0F, rowY + COMPACT_FRIEND_NAME_OFFSET, rowX + rowW, rowY, 12.0F,
+                textX, nameY, rowX + rowW, rowY, 12.0F,
                 MenuStyle.TEXT_PRIMARY, false,
-                insideList(mouseX, mouseY, rowX + 18.0F, rowY, rowW - 18.0F, COMPACT_FRIEND_ROW));
-        drawStatus(context, rowX + 20.0F, rowY + COMPACT_FRIEND_STATUS_OFFSET, service.isUserOnline(friend.id()),
-                serverName(friend.id()), rowW - 21.0F);
+                insideList(mouseX, mouseY, textX, rowY, rowW - COMPACT_FRIEND_TEXT_INSET, COMPACT_FRIEND_ROW));
+        drawStatus(context, textX, nameY + 7.0F, service.isUserOnline(friend.id()),
+                serverName(friend.id()), rowW - COMPACT_FRIEND_TEXT_INSET - 1.0F);
     }
 
     private String serverName(String userId) {
@@ -1329,8 +1336,9 @@ public final class MessengerViewComponent extends AbstractComponent {
         float textX = inputX + 7.0F;
         float textOrigin = textX + 0.75F;
         float textY = MenuStyle.centerMsdfTextY(INPUT_TEXT_SIZE, inputY, INPUT_HEIGHT);
-        float lineY = textY - 1.0F;
         float lineHeight = INPUT_TEXT_SIZE + 2.0F;
+        // Centre the caret and selection without the MSDF text's optical offset.
+        float lineY = inputY + (INPUT_HEIGHT - lineHeight) / 2.0F;
         if (input.isEmpty() && !inputFocused) {
             drawText(context, value, textOrigin, textY, INPUT_TEXT_SIZE, MenuStyle.TEXT_MUTED, false);
         } else {
