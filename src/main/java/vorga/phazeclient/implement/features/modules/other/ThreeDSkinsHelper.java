@@ -40,6 +40,7 @@ public final class ThreeDSkinsHelper {
         originalVisibility.clear();
 
         if (model == null || state == null) return;
+        if (state.invisible && state.invisibleToPlayer && !state.hasOutline) return;
 
         ThreeDSkins module = ThreeDSkins.getInstance();
         if (module == null || !module.isEnabled()) return;
@@ -69,27 +70,29 @@ public final class ThreeDSkinsHelper {
         currentIsSlim = state.skinTextures != null && state.skinTextures.model() == SkinTextures.Model.SLIM;
 
         // Hide vanilla flat 2D layers that are replaced by 3D voxels
-        if (module.hat3D.isValue() && !baked.hat.isEmpty()) {
+        if (module.hat3D.isValue() && model.head.visible && model.hat.visible && !baked.hat.isEmpty()) {
             hide(model.hat);
         }
-        if (module.jacket3D.isValue() && !baked.jacket.isEmpty()) {
+        // Vanilla spectators have only a head, even if their skin toggles enable body layers.
+        if (state.spectator) return;
+        if (module.jacket3D.isValue() && model.body.visible && model.jacket.visible && !baked.jacket.isEmpty()) {
             hide(model.jacket);
         }
         if (module.sleeves3D.isValue()) {
             List<ThreeDSkinsVoxelizer.VoxelQuad> leftSleeve = currentIsSlim ? baked.leftSleeveSlim : baked.leftSleeveWide;
             List<ThreeDSkinsVoxelizer.VoxelQuad> rightSleeve = currentIsSlim ? baked.rightSleeveSlim : baked.rightSleeveWide;
-            if (leftSleeve != null && !leftSleeve.isEmpty()) {
+            if (model.leftArm.visible && model.leftSleeve.visible && leftSleeve != null && !leftSleeve.isEmpty()) {
                 hide(model.leftSleeve);
             }
-            if (rightSleeve != null && !rightSleeve.isEmpty()) {
+            if (model.rightArm.visible && model.rightSleeve.visible && rightSleeve != null && !rightSleeve.isEmpty()) {
                 hide(model.rightSleeve);
             }
         }
         if (module.pants3D.isValue()) {
-            if (!baked.leftPants.isEmpty()) {
+            if (model.leftLeg.visible && model.leftPants.visible && !baked.leftPants.isEmpty()) {
                 hide(model.leftPants);
             }
-            if (!baked.rightPants.isEmpty()) {
+            if (model.rightLeg.visible && model.rightPants.visible && !baked.rightPants.isEmpty()) {
                 hide(model.rightPants);
             }
         }
@@ -126,65 +129,75 @@ public final class ThreeDSkinsHelper {
             return;
         }
 
-        // Skin pixels are binary alpha, not blended glass. Cutout keeps the
-        // pass in the opaque/cutout pipeline and avoids the expensive sorted
-        // translucent queue for every player in a crowd.
-        VertexConsumer consumer = vertexConsumers.getBuffer(RenderLayer.getEntityCutoutNoCull(skinId));
+        // Match vanilla's ghost-head alpha and render layer for visible invisible players.
+        // Keep the normal skin path in the cutout pipeline.
+        boolean translucent = state.invisible && !state.invisibleToPlayer;
+        RenderLayer layer = translucent ? RenderLayer.getItemEntityTranslucentCull(skinId)
+                : state.invisible ? (state.hasOutline ? RenderLayer.getOutline(skinId) : null)
+                : RenderLayer.getEntityCutoutNoCull(skinId);
+        if (layer == null) {
+            restoreVisibility();
+            activeForCurrentEntity = false;
+            currentBaked = null;
+            return;
+        }
+        int color = translucent ? 0x26FFFFFF : 0xFFFFFFFF;
+        VertexConsumer consumer = vertexConsumers.getBuffer(layer);
 
         // 1. Hat (attached to head)
-        if (module.hat3D.isValue() && !currentBaked.hat.isEmpty()) {
+        if (module.hat3D.isValue() && Boolean.TRUE.equals(originalVisibility.get(model.hat)) && !currentBaked.hat.isEmpty()) {
             matrices.push();
             transformPart(matrices, model.head);
             matrices.scale(1.0f / 16.0f, 1.0f / 16.0f, 1.0f / 16.0f);
-            renderQuads(consumer, matrices, currentBaked.hat, light, overlay);
+            renderQuads(consumer, matrices, currentBaked.hat, light, overlay, color);
             matrices.pop();
         }
 
         // 2. Jacket (attached to body)
-        if (module.jacket3D.isValue() && !currentBaked.jacket.isEmpty()) {
+        if (!state.spectator && module.jacket3D.isValue() && Boolean.TRUE.equals(originalVisibility.get(model.jacket)) && !currentBaked.jacket.isEmpty()) {
             matrices.push();
             transformPart(matrices, model.body);
             matrices.scale(1.0f / 16.0f, 1.0f / 16.0f, 1.0f / 16.0f);
-            renderQuads(consumer, matrices, currentBaked.jacket, light, overlay);
+            renderQuads(consumer, matrices, currentBaked.jacket, light, overlay, color);
             matrices.pop();
         }
 
         // 3. Sleeves (attached to rightArm and leftArm)
-        if (module.sleeves3D.isValue()) {
+        if (!state.spectator && module.sleeves3D.isValue()) {
             List<ThreeDSkinsVoxelizer.VoxelQuad> rightSleeve = currentIsSlim ? currentBaked.rightSleeveSlim : currentBaked.rightSleeveWide;
-            if (rightSleeve != null && !rightSleeve.isEmpty()) {
+            if (Boolean.TRUE.equals(originalVisibility.get(model.rightSleeve)) && rightSleeve != null && !rightSleeve.isEmpty()) {
                 matrices.push();
                 model.rightArm.rotate(matrices);
                 matrices.scale(1.0f / 16.0f, 1.0f / 16.0f, 1.0f / 16.0f);
-                renderQuads(consumer, matrices, rightSleeve, light, overlay);
+                renderQuads(consumer, matrices, rightSleeve, light, overlay, color);
                 matrices.pop();
             }
 
             List<ThreeDSkinsVoxelizer.VoxelQuad> leftSleeve = currentIsSlim ? currentBaked.leftSleeveSlim : currentBaked.leftSleeveWide;
-            if (leftSleeve != null && !leftSleeve.isEmpty()) {
+            if (Boolean.TRUE.equals(originalVisibility.get(model.leftSleeve)) && leftSleeve != null && !leftSleeve.isEmpty()) {
                 matrices.push();
                 model.leftArm.rotate(matrices);
                 matrices.scale(1.0f / 16.0f, 1.0f / 16.0f, 1.0f / 16.0f);
-                renderQuads(consumer, matrices, leftSleeve, light, overlay);
+                renderQuads(consumer, matrices, leftSleeve, light, overlay, color);
                 matrices.pop();
             }
         }
 
         // 4. Pants (attached to rightLeg and leftLeg)
-        if (module.pants3D.isValue()) {
-            if (!currentBaked.rightPants.isEmpty()) {
+        if (!state.spectator && module.pants3D.isValue()) {
+            if (Boolean.TRUE.equals(originalVisibility.get(model.rightPants)) && !currentBaked.rightPants.isEmpty()) {
                 matrices.push();
                 model.rightLeg.rotate(matrices);
                 matrices.scale(1.0f / 16.0f, 1.0f / 16.0f, 1.0f / 16.0f);
-                renderQuads(consumer, matrices, currentBaked.rightPants, light, overlay);
+                renderQuads(consumer, matrices, currentBaked.rightPants, light, overlay, color);
                 matrices.pop();
             }
 
-            if (!currentBaked.leftPants.isEmpty()) {
+            if (Boolean.TRUE.equals(originalVisibility.get(model.leftPants)) && !currentBaked.leftPants.isEmpty()) {
                 matrices.push();
                 model.leftLeg.rotate(matrices);
                 matrices.scale(1.0f / 16.0f, 1.0f / 16.0f, 1.0f / 16.0f);
-                renderQuads(consumer, matrices, currentBaked.leftPants, light, overlay);
+                renderQuads(consumer, matrices, currentBaked.leftPants, light, overlay, color);
                 matrices.pop();
             }
         }
@@ -221,7 +234,8 @@ public final class ThreeDSkinsHelper {
             MatrixStack matrices,
             List<ThreeDSkinsVoxelizer.VoxelQuad> quads,
             int light,
-            int overlay
+            int overlay,
+            int color
     ) {
         MatrixStack.Entry entry = matrices.peek();
         Matrix4f posMatrix = entry.getPositionMatrix();
@@ -230,7 +244,7 @@ public final class ThreeDSkinsHelper {
             Vector3f normal = quad.normal();
             for (ThreeDSkinsVoxelizer.VoxelVertex v : quad.vertices()) {
                 consumer.vertex(posMatrix, v.x(), v.y(), v.z())
-                        .color(0xFFFFFFFF)
+                        .color(color)
                         .texture(v.u(), v.v())
                         .overlay(overlay)
                         .light(light)

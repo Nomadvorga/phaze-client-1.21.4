@@ -16,6 +16,7 @@ import java.util.List;
 public class WindowManager extends AbstractComponent {
     public static final WindowManager INSTANCE = new WindowManager();
     private final List<AbstractWindow> windows = new ArrayList<>();
+    private AbstractWindow interactiveWindow;
 
     public void add(AbstractWindow window) {
         windows.add(window);
@@ -35,6 +36,18 @@ public class WindowManager extends AbstractComponent {
         windows.clear();
     }
 
+    public boolean hasVisibleWindows() {
+        return topVisibleWindow() != null;
+    }
+
+    private AbstractWindow topVisibleWindow() {
+        for (int i = windows.size() - 1; i >= 0; i--) {
+            AbstractWindow window = windows.get(i);
+            if (!window.isCloseAnimationFinished()) return window;
+        }
+        return null;
+    }
+
     public boolean isMouseOverAnyWindow(double mouseX, double mouseY) {
         for (AbstractWindow window : windows) {
             if (window.isHovered(mouseX, mouseY)) {
@@ -48,6 +61,13 @@ public class WindowManager extends AbstractComponent {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         List<AbstractWindow> toRemove = new ArrayList<>();
+        AbstractWindow topWindow = topVisibleWindow();
+        AbstractWindow activeWindow = topWindow != null && !topWindow.isClosing() && mouseX != INACTIVE_MOUSE
+                ? topWindow : null;
+        if (interactiveWindow != activeWindow) {
+            if (interactiveWindow != null) interactiveWindow.mouseReleased(INACTIVE_MOUSE, INACTIVE_MOUSE, 0);
+            interactiveWindow = activeWindow;
+        }
 
         // Snapshot the menu with its content drawn but before any window is
         // painted. Window backdrops blur from this, so a color picker's
@@ -59,7 +79,8 @@ public class WindowManager extends AbstractComponent {
         }
 
         windows.forEach(window -> {
-            window.render(context, mouseX, mouseY, delta);
+            boolean interactive = window == activeWindow;
+            window.render(context, interactive ? mouseX : INACTIVE_MOUSE, interactive ? mouseY : INACTIVE_MOUSE, delta);
 
             if (window.isCloseAnimationFinished()) {
                 toRemove.add(window);
@@ -76,13 +97,10 @@ public class WindowManager extends AbstractComponent {
 
         if (descriptionComponent != null) {
             boolean mouseOverWindow = false;
-            for (int i = windows.size() - 1; i >= 0; i--) {
-                AbstractWindow window = windows.get(i);
-                if (window.isHovered(mouseX, mouseY)) {
-                    mouseOverWindow = true;
-                    handleWindowHoverDescriptions(window, descriptionComponent, mouseX, mouseY, context, delta);
-                    break;
-                }
+            AbstractWindow window = topVisibleWindow();
+            if (window != null && !window.isClosing() && window.isHovered(mouseX, mouseY)) {
+                mouseOverWindow = true;
+                handleWindowHoverDescriptions(window, descriptionComponent, mouseX, mouseY, context, delta);
             }
 
             if (!mouseOverWindow) {

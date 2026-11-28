@@ -202,10 +202,11 @@ public class MenuScreen extends Screen implements QuickImports {
                 boolean configsViewOpen = configsView.isActive();
                 boolean cosmeticsViewOpen = cosmeticsView.isOpen();
                 boolean messengerViewOpen = messengerView.isOpen();
-                boolean mouseOverWindow = windowManager.isMouseOverAnyWindow(overlayMouseX, overlayMouseY);
-                boolean editorOpen = waypointEditor.isOpen();
-                int routedMouseX = mouseOverWindow || editorOpen ? Integer.MIN_VALUE / 4 : overlayMouseX;
-                int routedMouseY = mouseOverWindow || editorOpen ? Integer.MIN_VALUE / 4 : overlayMouseY;
+                boolean configModalVisible = configShareModal.shouldRender();
+                boolean windowVisible = windowManager.hasVisibleWindows();
+                boolean backgroundBlocked = configModalVisible || windowVisible || waypointEditor.shouldRender();
+                int routedMouseX = backgroundBlocked ? AbstractComponent.INACTIVE_MOUSE : overlayMouseX;
+                int routedMouseY = backgroundBlocked ? AbstractComponent.INACTIVE_MOUSE : overlayMouseY;
                 for (AbstractComponent component : components) {
                     if ((moduleDetailOpen || configsViewOpen || cosmeticsViewOpen || messengerViewOpen)
                             && (component == searchComponent || component == categoryContainerComponent || component == moduleDescriptionComponent)) {
@@ -232,9 +233,10 @@ public class MenuScreen extends Screen implements QuickImports {
                 // Below the window layer: its colour picker opens on top of it.
                 waypointEditor.position(x, y).size(width, height);
                 waypointEditor.globalAlpha = alphaAnimation;
-                waypointEditor.render(context, mouseOverWindow ? Integer.MIN_VALUE / 4 : overlayMouseX,
-                        mouseOverWindow ? Integer.MIN_VALUE / 4 : overlayMouseY, delta);
-                windowManager.render(context, overlayMouseX, overlayMouseY, delta);
+                waypointEditor.render(context, configModalVisible || windowVisible ? AbstractComponent.INACTIVE_MOUSE : overlayMouseX,
+                        configModalVisible || windowVisible ? AbstractComponent.INACTIVE_MOUSE : overlayMouseY, delta);
+                windowManager.render(context, configModalVisible ? AbstractComponent.INACTIVE_MOUSE : overlayMouseX,
+                        configModalVisible ? AbstractComponent.INACTIVE_MOUSE : overlayMouseY, delta);
                 // ConfigShare modal renders LAST so it floats above
                 // the windowManager output (window dialogs, etc.) and
                 // its dim layer covers the entire menu canvas. We
@@ -600,6 +602,15 @@ public class MenuScreen extends Screen implements QuickImports {
         boolean insideMenu = MathUtil.isHovered(overlayMouseX, overlayMouseY, x, y, width, height);
         boolean clickInsideWindow = windowManager.isMouseOverAnyWindow(overlayMouseX, overlayMouseY);
 
+        // The top modal owns the entire canvas, including its dim backdrop.
+        if (configShareModal.shouldRender()) {
+            if (configShareModal.isOpen()) {
+                configShareModal.position(x, y).size(width, height);
+                configShareModal.mouseClicked(overlayMouseX, overlayMouseY, button);
+            }
+            return true;
+        }
+
         if (!clickInsideWindow) {
             windowManager.closeAll();
         }
@@ -620,16 +631,6 @@ public class MenuScreen extends Screen implements QuickImports {
 
         if (shouldStartMenuDrag(overlayMouseX, overlayMouseY, button, insideMenu)) {
             startMenuDrag(mouseX, mouseY);
-            return true;
-        }
-
-        // ConfigShare modal claims input priority while open so clicks
-        // on the dim backdrop can close it and clicks on the modal's
-        // own widgets aren't intercepted by the search bar / category
-        // grid that lives underneath.
-        if (configShareModal.isOpen()) {
-            configShareModal.position(x, y).size(width, height);
-            configShareModal.mouseClicked(overlayMouseX, overlayMouseY, button);
             return true;
         }
 
@@ -719,6 +720,10 @@ public class MenuScreen extends Screen implements QuickImports {
             return true;
         }
 
+        if (configShareModal.shouldRender()) {
+            return true;
+        }
+
         if (waypointEditor.isOpen()) {
             windowManager.mouseReleased(overlayMouseX, overlayMouseY, button);
             return true;
@@ -755,6 +760,9 @@ public class MenuScreen extends Screen implements QuickImports {
         double guiScale = vorga.phazeclient.implement.menu.MenuUiSettings.getInstance().getGuiScale();
         double overlayDeltaX = toOverlayCoordinate(deltaX) / guiScale;
         double overlayDeltaY = toOverlayCoordinate(deltaY) / guiScale;
+        if (configShareModal.shouldRender()) {
+            return true;
+        }
         if (menuDragging) {
             float mouseDragX = (float) (overlayMouseX + dragOffsetX);
             float mouseDragY = (float) (overlayMouseY + dragOffsetY);
@@ -822,6 +830,9 @@ public class MenuScreen extends Screen implements QuickImports {
         updateOverlayMetrics();
         double overlayMouseX = toMenuCoordinateX(mouseX);
         double overlayMouseY = toMenuCoordinateY(mouseY);
+        if (configShareModal.shouldRender()) {
+            return true;
+        }
         if (waypointEditor.isOpen()) {
             windowManager.mouseScrolled(overlayMouseX, overlayMouseY, vertical);
             return true;
@@ -872,10 +883,11 @@ public class MenuScreen extends Screen implements QuickImports {
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         // Modal owns key input while open so Esc closes it and the
         // text field gets every keystroke before menu hotkeys.
-        if (waypointEditor.isOpen() && waypointEditor.keyPressed(keyCode, scanCode, modifiers)) {
+        if (configShareModal.shouldRender()) {
+            if (configShareModal.isOpen()) configShareModal.keyPressed(keyCode, scanCode, modifiers);
             return true;
         }
-        if (configShareModal.isOpen() && configShareModal.keyPressed(keyCode, scanCode, modifiers)) {
+        if (waypointEditor.isOpen() && waypointEditor.keyPressed(keyCode, scanCode, modifiers)) {
             return true;
         }
         if (messengerView.isOpen() && messengerView.keyPressed(keyCode, scanCode, modifiers)) {
@@ -921,6 +933,9 @@ public class MenuScreen extends Screen implements QuickImports {
 
     @Override
     public boolean keyReleased(int keyCode, int scanCode, int modifiers) {
+        if (configShareModal.shouldRender()) {
+            return true;
+        }
         if (backgroundComponent.keyReleased(keyCode, scanCode, modifiers)) {
             return true;
         }
@@ -937,10 +952,11 @@ public class MenuScreen extends Screen implements QuickImports {
 
     @Override
     public boolean charTyped(char chr, int modifiers) {
-        if (waypointEditor.isOpen() && waypointEditor.charTyped(chr, modifiers)) {
+        if (configShareModal.shouldRender()) {
+            if (configShareModal.isOpen()) configShareModal.charTyped(chr, modifiers);
             return true;
         }
-        if (configShareModal.isOpen() && configShareModal.charTyped(chr, modifiers)) {
+        if (waypointEditor.isOpen() && waypointEditor.charTyped(chr, modifiers)) {
             return true;
         }
         if (messengerView.isOpen() && messengerView.charTyped(chr, modifiers)) {

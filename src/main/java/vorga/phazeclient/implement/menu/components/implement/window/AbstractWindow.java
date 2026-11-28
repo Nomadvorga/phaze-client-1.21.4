@@ -58,7 +58,7 @@ public abstract class AbstractWindow extends AbstractComponent {
     
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        if (dragging && draggable) {
+        if (dragging && draggable && mouseX != INACTIVE_MOUSE && mouseY != INACTIVE_MOUSE) {
             x = mouseX + dragX;
             y = mouseY + dragY;
 
@@ -106,5 +106,9 @@ public abstract class AbstractWindow extends AbstractComponent {
     public boolean isCloseAnimationFinished() {
         return scaleAnimation.isFinished(Direction.BACKWARDS)
                 && alphaAnimation.isFinished(Direction.BACKWARDS);
+    }
+
+    public boolean isClosing() {
+        return scaleAnimation.isDirection(Direction.BACKWARDS);
     }
 }

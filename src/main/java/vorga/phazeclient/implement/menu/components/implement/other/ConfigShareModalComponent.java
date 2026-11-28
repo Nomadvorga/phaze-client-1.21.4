@@ -157,14 +157,22 @@ public class ConfigShareModalComponent extends AbstractComponent {
         return open;
     }
 
+    public boolean shouldRender() {
+        return open || openAnimation.getOutputFloat() > 0.001F;
+    }
+
     /* ============================================================ */
     /* render                                                       */
     /* ============================================================ */
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        if (!open && openAnimation.getOutputFloat() <= 0.001F) {
+        if (!shouldRender()) {
             return;
+        }
+        if (!open) {
+            mouseX = INACTIVE_MOUSE;
+            mouseY = INACTIVE_MOUSE;
         }
         // Pull the latest language selection from Theme so a
         // language flip while this modal is open repaints in the

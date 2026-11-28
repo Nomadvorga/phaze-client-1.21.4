@@ -9,6 +9,9 @@ import net.minecraft.client.sound.PositionedSoundInstance;
 import net.minecraft.sound.SoundEvents;
 
 public abstract class AbstractComponent implements Component, QuickImports, ResizableMovable {
+    /** Render lower layers without exposing the active overlay's pointer to them. */
+    public static final int INACTIVE_MOUSE = Integer.MIN_VALUE / 4;
+
     public float x, y, width, height;
     public float globalAlpha = 1.0F;
 

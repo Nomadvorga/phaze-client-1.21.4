@@ -7,6 +7,7 @@ import com.sun.net.httpserver.HttpServer;
 import vorga.phazeclient.base.util.Lang;
 import vorga.phazeclient.base.util.MessengerService;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -19,6 +20,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
+import java.util.zip.GZIPOutputStream;
 
 /**
  * Drives the real {@link MessengerService} against a local fake chat API, plus the
@@ -29,7 +31,9 @@ public final class MessengerChecks {
     private static final CountDownLatch closeStreams = new CountDownLatch(1);
     private static final AtomicInteger sessionFailures = new AtomicInteger();
     private static final AtomicInteger historyFailures = new AtomicInteger();
+    private static final AtomicInteger missingCompressionHeaders = new AtomicInteger();
     private static volatile int bootstrapStatus = 200;
+    private static volatile boolean gzipResponses;
     private static final String SAVED_GROUP_ID = "1234567890abcdef1234567890abcdef";
     private static int checks;
 
@@ -49,6 +53,7 @@ public final class MessengerChecks {
             serverModeration();
             socialFeatures();
             startupState();
+            compressedResponses();
         } finally {
             closeStreams.countDown();
             server.stop(0);
@@ -337,6 +342,29 @@ public final class MessengerChecks {
         }
     }
 
+    /** Sessions, snapshots and errors retain the same meaning when the server compresses JSON. */
+    private static void compressedResponses() throws Exception {
+        calls.clear();
+        missingCompressionHeaders.set(0);
+        gzipResponses = true;
+        MessengerService service = isolatedService();
+        try {
+            service.start();
+            waitFor(service::isConnected, "a gzip-compressed session and snapshot open the stream");
+            check(service.getGroup(SAVED_GROUP_ID) != null && service.getMessages(SAVED_GROUP_ID).size() == 1
+                            && service.getGlobalMessages().size() == 1,
+                    "compressed bootstrap restores groups and their complete history");
+            check(calls.stream().noneMatch(call -> call.equals("GET /api/chat/friends")),
+                    "a compressed snapshot needs no compatibility fallback");
+            check(!send(service, "spam") && "friend_request_slow_down".equals(service.getStatus()),
+                    "compressed HTTP errors retain their status and JSON error code");
+            check(missingCompressionHeaders.get() == 0, "JSON requests advertise gzip support");
+        } finally {
+            service.stop();
+            gzipResponses = false;
+        }
+    }
+
     private static void handle(HttpExchange exchange) throws IOException {
         String method = exchange.getRequestMethod();
         String path = exchange.getRequestURI().getPath();
@@ -357,6 +385,9 @@ public final class MessengerChecks {
                 Thread.currentThread().interrupt();
             }
             return;
+        }
+        if (gzipResponses && !"gzip".equalsIgnoreCase(exchange.getRequestHeaders().getFirst("Accept-Encoding"))) {
+            missingCompressionHeaders.incrementAndGet();
         }
         if (path.startsWith("/api/chat/conversations/") && path.endsWith("/read")) {
             reply(exchange, 200, "{\"sequence\":4}");
@@ -446,6 +477,14 @@ public final class MessengerChecks {
 
     private static void reply(HttpExchange exchange, int status, String body) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        if (gzipResponses) {
+            ByteArrayOutputStream compressed = new ByteArrayOutputStream();
+            try (GZIPOutputStream gzip = new GZIPOutputStream(compressed)) {
+                gzip.write(bytes);
+            }
+            bytes = compressed.toByteArray();
+            exchange.getResponseHeaders().set("Content-Encoding", "gzip");
+        }
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.sendResponseHeaders(status, bytes.length);
         try (OutputStream output = exchange.getResponseBody()) {

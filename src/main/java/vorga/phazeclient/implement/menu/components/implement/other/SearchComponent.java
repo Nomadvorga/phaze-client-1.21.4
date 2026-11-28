@@ -45,13 +45,11 @@ public class SearchComponent extends AbstractComponent {
     private static final float COLLAPSED_WIDTH = 82;
     private static final float EXPANDED_WIDTH = 82;
     private static final float ICON_SIZE = 7;
+    private static final float ICON_X_INSET = 4.0F;
     private static final float SEARCH_HEIGHT = 14;
     private static final float SEARCH_TEXT_SIZE = 6.0F;
     private static final float MSDF_GLYPH_TRACKING = 0.05F * 0.5F * SEARCH_TEXT_SIZE;
     private static final Identifier SEARCH_ICON = Identifier.ofVanilla("textures/search_lunar.png");
-    // Text is deliberately closer to the search icon. Keep the clip inset
-    // slightly wider than the text inset so the first glyph is never cut.
-    private static final float INPUT_TEXT_X_OFFSET = 12.0F;
     private static final float INPUT_SCISSOR_X_OFFSET = 7.0F;
     private static final float INPUT_SCISSOR_RIGHT_INSET = 2.0F;
     private static final float SELECTION_X_OFFSET = 0.0F;
@@ -108,7 +106,7 @@ public class SearchComponent extends AbstractComponent {
         // the cursor follows the mouse and the selection grows from
         // the original press position. The flag is cleared in
         // {@link #mouseReleased}.
-        if (dragging && typing) {
+        if (dragging && typing && mouseX != INACTIVE_MOUSE) {
             cursorPosition = getCursorIndexAt(mouseX);
             if (selectionStart == -1) selectionStart = cursorPosition;
             selectionEnd = cursorPosition;
@@ -131,7 +129,7 @@ public class SearchComponent extends AbstractComponent {
         // I-beam shape while the pointer is over it. CursorManager
         // commits the highest-priority request at end-of-frame, so
         // touching it from a render path is safe.
-        if (isHovered || typing) {
+        if (isHovered || (typing && mouseX != INACTIVE_MOUSE)) {
             vorga.phazeclient.api.system.cursor.CursorManager.requestBeam();
         }
 
@@ -152,11 +150,11 @@ public class SearchComponent extends AbstractComponent {
 
         if (animatedWidth < EXPANDED_WIDTH - 1) {
             float progress = (animatedWidth - COLLAPSED_WIDTH) / (EXPANDED_WIDTH - COLLAPSED_WIDTH);
-            float collapsedIconX = x + 4;
-            float expandedIconX = x + 4;
+            float collapsedIconX = x + ICON_X_INSET;
+            float expandedIconX = x + ICON_X_INSET;
             iconX = MathHelper.lerp(progress, collapsedIconX, expandedIconX);
         } else {
-            iconX = x + 4;
+            iconX = x + ICON_X_INSET;
         }
 
         UiMsdfIconAtlas.renderIcon(context, SEARCH_ICON, iconX, iconY, ICON_SIZE, ICON_SIZE,
@@ -164,7 +162,8 @@ public class SearchComponent extends AbstractComponent {
 
         float animationProgress = getAnimationProgress();
         float textAlpha = Math.max(0, Math.min(1.0F, (animationProgress - 0.2F) / 0.6F));
-        float textX = x + INPUT_TEXT_X_OFFSET - xOffset;
+        float textInset = inputTextXOffset(font);
+        float textX = x + textInset - xOffset;
 
         if (textAlpha > 0.01F) {
             String displayText = text;
@@ -224,7 +223,7 @@ public class SearchComponent extends AbstractComponent {
                 }
 
                 if (displayText.isEmpty() && !typing) {
-                    drawMsdfText(context, Lang.translate("Search"), x + INPUT_TEXT_X_OFFSET, inputTextY,
+                    drawMsdfText(context, Lang.translate("Search"), x + textInset, inputTextY,
                             MenuStyle.withAlpha(MenuStyle.TEXT_MUTED, applyGlobalAlpha(textAlpha)));
                 } else {
                     drawMsdfText(context, displayText, textX, inputTextY,
@@ -240,10 +239,17 @@ public class SearchComponent extends AbstractComponent {
                     float cursorX = font.getWidth(text.substring(0, cursorPosition), SEARCH_TEXT_SIZE);
                     int cursorColor = (int) (applyGlobalAlpha(textAlpha) * 255) << 24 | 0xFFFFFF;
                     float cursorHeight = 7.0F;
-                    rectangle.render(ShapeProperties.create(matrix, x + INPUT_TEXT_X_OFFSET - xOffset + cursorX, y + (height - cursorHeight) * 0.5F, 0.5F, cursorHeight)
+                    rectangle.render(ShapeProperties.create(matrix, x + textInset - xOffset + cursorX, y + (height - cursorHeight) * 0.5F, 0.5F, cursorHeight)
                             .color(cursorColor).build());
                 }
             }
+    }
+
+    private static float inputTextXOffset(MsdfFont font) {
+        UiMsdfIconAtlas.IconInk ink = UiMsdfIconAtlas.ink(SEARCH_ICON);
+        // Match the gap to the visible icon's left inset, accounting for glyph padding.
+        return 2.0F * ICON_X_INSET + ICON_SIZE * (ink.left() + ink.right())
+                - font.getInkLeft("Search", SEARCH_TEXT_SIZE);
     }
 
     private static float getRenderedTextWidth(MsdfFont font, String value) {
@@ -457,7 +463,7 @@ public class SearchComponent extends AbstractComponent {
     
     private int getCursorIndexAt(double mouseX) {
         MsdfFont font = MsdfFonts.bold();
-        float relativeX = (float) mouseX - x - INPUT_TEXT_X_OFFSET + xOffset;
+        float relativeX = (float) mouseX - x - inputTextXOffset(font) + xOffset;
         int position = 0;
         while (position < text.length()) {
             float textWidth = font.getWidth(text.substring(0, position + 1), SEARCH_TEXT_SIZE);

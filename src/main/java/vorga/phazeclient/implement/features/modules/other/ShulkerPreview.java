@@ -26,24 +26,41 @@
  */
 package vorga.phazeclient.implement.features.modules.other;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.block.Block;
 import net.minecraft.block.ShulkerBoxBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.render.DiffuseLighting;
+import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.item.ItemRenderState;
+import net.minecraft.client.render.model.BakedModel;
+import net.minecraft.client.render.model.BasicBakedModel;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.ContainerComponent;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.ModelTransformationMode;
 import net.minecraft.util.DyeColor;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.crash.CrashException;
+import net.minecraft.util.crash.CrashReport;
+import net.minecraft.util.crash.CrashReportSection;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.random.Random;
+import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
 import vorga.phazeclient.api.feature.module.Module;
 import vorga.phazeclient.api.feature.module.ModuleCategory;
 import vorga.phazeclient.api.feature.module.setting.implement.BindSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.BooleanSetting;
 import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
+import vorga.phazeclient.mixins.ItemLayerRenderStateAccessor;
+
+import java.util.IdentityHashMap;
 
 /**
  * Tooltip-style preview of a shulker-box's contents while hovering
@@ -81,6 +98,12 @@ import vorga.phazeclient.api.feature.module.setting.implement.SectionSetting;
  * work, so we cache the resolved stacks + overlay flags and refresh
  * only when the hovered stack identity changes or the game tick
  * counter advances.
+ *
+ * <h3>Item batching</h3>
+ * Resolve live models once per distinct stack each frame, then batch
+ * icons with matching lighting. Only models bounded by their own slot
+ * may be reordered; special or oversized models keep native draw calls
+ * and buffer boundaries so overlapping details remain unchanged.
  */
 public final class ShulkerPreview extends Module {
     private static final ShulkerPreview INSTANCE = new ShulkerPreview();
@@ -136,6 +159,13 @@ public final class ShulkerPreview extends Module {
 
     private static final ItemStack[] CACHED_STACKS = new ItemStack[GRID_COLS * GRID_ROWS];
     private static final boolean[] CACHED_OVERLAYS = new boolean[GRID_COLS * GRID_ROWS];
+    private static final int[] CACHED_MODEL_SLOTS = new int[GRID_COLS * GRID_ROWS];
+    private static final ItemRenderState[] CACHED_MODELS = new ItemRenderState[GRID_COLS * GRID_ROWS];
+    private static final int[] DRAW_ORDER = new int[GRID_COLS * GRID_ROWS];
+    private static final boolean[] REORDERABLE_MODELS = new boolean[GRID_COLS * GRID_ROWS];
+    private static final IdentityHashMap<BakedModel, Boolean> MODEL_FITS_SLOT = new IdentityHashMap<>();
+    private static final Direction[] QUAD_FACES = {null, Direction.DOWN, Direction.UP,
+            Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST};
     private static int cachedSlotsToDraw = 0;
     private static ItemStack lastHoveredStack = null;
     private static ContainerComponent lastContainer = null;
@@ -309,20 +339,30 @@ public final class ShulkerPreview extends Module {
             lastTick = tick;
             int idx = 0;
             int cap = GRID_COLS * GRID_ROWS;
-            // streamNonEmpty allocates an iterator; confined to the
-            // once-per-tick refresh path so the per-frame render
-            // stays alloc-free.
+            // Avoid allocating the container iterator on every rendered frame.
             java.util.Iterator<ItemStack> iter = container.streamNonEmpty().iterator();
             while (iter.hasNext() && idx < cap) {
                 ItemStack stack = iter.next();
                 CACHED_STACKS[idx] = stack;
                 CACHED_OVERLAYS[idx] = computeOverlayFlag(stack, mc);
+                int modelSlot = idx;
+                for (int previous = 0; previous < idx; previous++) {
+                    if (ItemStack.areEqual(stack, CACHED_STACKS[previous])) {
+                        modelSlot = CACHED_MODEL_SLOTS[previous];
+                        break;
+                    }
+                }
+                CACHED_MODEL_SLOTS[idx] = modelSlot;
+                if (modelSlot == idx && CACHED_MODELS[idx] == null) {
+                    CACHED_MODELS[idx] = new ItemRenderState();
+                }
                 idx++;
             }
             cachedSlotsToDraw = idx;
             for (int i = idx; i < cap; i++) {
                 CACHED_STACKS[i] = null;
                 CACHED_OVERLAYS[i] = false;
+                if (CACHED_MODELS[i] != null) CACHED_MODELS[i].clear();
             }
         }
 
@@ -346,46 +386,218 @@ public final class ShulkerPreview extends Module {
             }
         }
 
-        // Slot pass: highlight (back) -> item -> overlay -> highlight (front).
-        // Layering matches upstream so the halo halo's outer rim
-        // sits OVER the item, while the inner glow sits UNDER it.
+        // Resolve in slot order every frame: clocks, compasses, resource-pack
+        // predicates and glint must keep using the native live models.
+        boolean mixedLighting = false;
+        boolean firstFlat = false;
         for (int i = 0; i < cachedSlotsToDraw; i++) {
-            ItemStack stack = CACHED_STACKS[i];
-            if (stack == null || stack.isEmpty()) continue;
-            int row = i / GRID_COLS;
-            int col = i % GRID_COLS;
-            int slotX = gridOriginX + col * SLOT_SIZE;
-            int slotY = gridOriginY + row * SLOT_SIZE;
-            boolean highlighted = i == hoveredSlot;
-
-            // Layer order matches upstream ModPreviewRenderer.drawSlot:
-            //   1. BACK sprite via getGuiTexturedOverlay (under item,
-            //      additive blend so the inner glow shines through)
-            //   2. Item icon + count/durability overlay
-            //   3. FRONT sprite via getGuiTextured (over item, opaque
-            //      so the outer rim sits cleanly on top)
-            if (highlighted) {
-                context.drawGuiTexture(RenderLayer::getGuiTexturedOverlay,
-                        SLOT_HIGHLIGHT_BACK,
-                        slotX - HIGHLIGHT_OFFSET, slotY - HIGHLIGHT_OFFSET,
-                        HIGHLIGHT_SIZE, HIGHLIGHT_SIZE);
+            int modelSlot = CACHED_MODEL_SLOTS[i];
+            ItemRenderState model = CACHED_MODELS[modelSlot];
+            if (modelSlot == i) {
+                mc.getItemModelManager().update(model, CACHED_STACKS[i], ModelTransformationMode.GUI,
+                        false, mc.world, mc.player, 0);
             }
+            boolean flat = !model.isSideLit();
+            if (i == 0) firstFlat = flat;
+            else mixedLighting |= flat != firstFlat;
+            DRAW_ORDER[i] = i;
+        }
+        prepareDrawOrder(mc, hoveredSlot, mixedLighting);
 
-            context.drawItem(stack, slotX, slotY);
-            if (CACHED_OVERLAYS[i]) {
-                context.drawStackOverlay(mc.textRenderer, stack, slotX, slotY);
+        // Vanilla flushes once per icon (twice for flat icons). Batch matching
+        // lighting instead; only reorder icons proven not to overlap.
+        resetItemRenderState();
+        boolean flatLighting = false;
+        boolean pendingBatch = false;
+        try {
+            for (int draw = 0; draw < cachedSlotsToDraw; draw++) {
+                int i = DRAW_ORDER[draw];
+                ItemStack stack = CACHED_STACKS[i];
+                if (stack == null || stack.isEmpty()) continue;
+                int row = i / GRID_COLS;
+                int col = i % GRID_COLS;
+                int slotX = gridOriginX + col * SLOT_SIZE;
+                int slotY = gridOriginY + row * SLOT_SIZE;
+                boolean highlighted = i == hoveredSlot;
+                boolean isolated = highlighted || !REORDERABLE_MODELS[i];
+                int modelSlot = CACHED_MODEL_SLOTS[i];
+                ItemRenderState model = CACHED_MODELS[modelSlot];
+
+                // Layer order matches upstream ModPreviewRenderer.drawSlot:
+                //   1. BACK sprite via getGuiTexturedOverlay (under item,
+                //      additive blend so the inner glow shines through)
+                //   2. Item icon + count/durability overlay
+                //   3. FRONT sprite via getGuiTextured (over item, opaque
+                //      so the outer rim sits cleanly on top)
+                if (isolated) {
+                    if (pendingBatch) context.draw();
+                    pendingBatch = false;
+                    if (flatLighting) {
+                        DiffuseLighting.enableGuiDepthLighting();
+                        flatLighting = false;
+                    }
+                }
+                if (highlighted) {
+                    context.drawGuiTexture(RenderLayer::getGuiTexturedOverlay,
+                            SLOT_HIGHLIGHT_BACK,
+                            slotX - HIGHLIGHT_OFFSET, slotY - HIGHLIGHT_OFFSET,
+                            HIGHLIGHT_SIZE, HIGHLIGHT_SIZE);
+                }
+
+                if (isolated) {
+                    // Preserve exact draw boundaries for overlapping/custom models
+                    // and the original back/item/front ordering at the halo.
+                    drawIsolatedItem(context, model, stack, slotX, slotY);
+                } else {
+                    boolean needsFlatLighting = !model.isSideLit();
+                    if (flatLighting != needsFlatLighting) {
+                        context.draw();
+                        if (needsFlatLighting) DiffuseLighting.disableGuiDepthLighting();
+                        else DiffuseLighting.enableGuiDepthLighting();
+                        flatLighting = needsFlatLighting;
+                    }
+                    drawBatchedItem(context, model, stack, slotX, slotY);
+                    pendingBatch = true;
+                }
+                if (CACHED_OVERLAYS[i]) {
+                    context.drawStackOverlay(mc.textRenderer, stack, slotX, slotY);
+                }
+
+                if (highlighted) {
+                    context.drawGuiTexture(RenderLayer::getGuiTextured,
+                            SLOT_HIGHLIGHT_FRONT,
+                            slotX - HIGHLIGHT_OFFSET, slotY - HIGHLIGHT_OFFSET,
+                            HIGHLIGHT_SIZE, HIGHLIGHT_SIZE);
+                }
+                if (highlighted) context.draw();
             }
+            context.draw();
+        } finally {
+            if (flatLighting) DiffuseLighting.enableGuiDepthLighting();
+            context.getMatrices().pop();
+        }
+    }
 
-            if (highlighted) {
-                context.drawGuiTexture(RenderLayer::getGuiTextured,
-                        SLOT_HIGHLIGHT_FRONT,
-                        slotX - HIGHLIGHT_OFFSET, slotY - HIGHLIGHT_OFFSET,
-                        HIGHLIGHT_SIZE, HIGHLIGHT_SIZE);
+    private static void prepareDrawOrder(MinecraftClient mc, int hoveredSlot, boolean mixedLighting) {
+        for (int i = 0; i < cachedSlotsToDraw; i++) {
+            int modelSlot = CACHED_MODEL_SLOTS[i];
+            if (modelSlot == i) {
+                ItemStack stack = CACHED_STACKS[i];
+                REORDERABLE_MODELS[i] = fitsSlot(CACHED_MODELS[i])
+                        && (stack.getCount() == 1 || mc.textRenderer.getWidth(Integer.toString(stack.getCount())) <= 16);
+            }
+            REORDERABLE_MODELS[i] = REORDERABLE_MODELS[modelSlot];
+        }
+        if (!mixedLighting) return;
+        for (int start = 0; start < cachedSlotsToDraw;) {
+            // Oversized resource-pack models, special renderers and hover halos
+            // are order barriers. Keep everything on its original side of them.
+            if (start == hoveredSlot || !REORDERABLE_MODELS[start]) {
+                start++;
+                continue;
+            }
+            int end = start + 1;
+            while (end < cachedSlotsToDraw && end != hoveredSlot && REORDERABLE_MODELS[end]) end++;
+            boolean sideLit = CACHED_MODELS[CACHED_MODEL_SLOTS[start]].isSideLit();
+            int out = start;
+            for (int pass = 0; pass < 2; pass++) {
+                for (int i = start; i < end; i++) {
+                    if (CACHED_MODELS[CACHED_MODEL_SLOTS[i]].isSideLit() == (pass == 0 ? sideLit : !sideLit)) {
+                        DRAW_ORDER[out++] = i;
+                    }
+                }
+            }
+            start = end;
+        }
+    }
+
+    private static boolean fitsSlot(ItemRenderState state) {
+        for (int layer = 0; layer < state.layerCount; layer++) {
+            var part = state.layers[layer];
+            if (((ItemLayerRenderStateAccessor) part).phaze$getSpecialModelType() != null || part.model == null) return false;
+            Boolean fits = MODEL_FITS_SLOT.get(part.model);
+            if (fits == null) {
+                fits = modelFitsSlot(part.model);
+                // Model identities change on resource reload; bound old entries.
+                if (MODEL_FITS_SLOT.size() >= 256) MODEL_FITS_SLOT.clear();
+                MODEL_FITS_SLOT.put(part.model, fits);
+            }
+            if (!fits) return false;
+        }
+        return true;
+    }
+
+    private static boolean modelFitsSlot(BakedModel model) {
+        // Only the native immutable quad model can be cached by identity.
+        // Modded/dynamic models keep their original draw order.
+        if (model.getClass() != BasicBakedModel.class) return false;
+        MatrixStack transform = new MatrixStack();
+        model.getTransformation().getTransformation(ModelTransformationMode.GUI).apply(false, transform);
+        transform.translate(-0.5F, -0.5F, -0.5F);
+        var matrix = transform.peek().getPositionMatrix();
+        Vector3f vertex = new Vector3f();
+        Random random = Random.create(42L);
+        for (Direction face : QUAD_FACES) {
+            random.setSeed(42L);
+            for (var quad : model.getQuads(null, face, random)) {
+                int[] data = quad.getVertexData();
+                int stride = data.length / 4;
+                if (stride < 3) return false;
+                for (int offset = 0; offset < data.length; offset += stride) {
+                    matrix.transformPosition(Float.intBitsToFloat(data[offset]), Float.intBitsToFloat(data[offset + 1]),
+                            Float.intBitsToFloat(data[offset + 2]), vertex);
+                    if (!Float.isFinite(vertex.x) || !Float.isFinite(vertex.y)
+                            || vertex.x < -0.5F || vertex.x > 0.5F || vertex.y < -0.5F || vertex.y > 0.5F) return false;
+                }
             }
         }
+        return true;
+    }
 
-        context.draw();
-        context.getMatrices().pop();
+    private static void resetItemRenderState() {
+        float alpha = RenderSystem.getShaderColor()[3];
+        RenderSystem.depthMask(true);
+        RenderSystem.enableDepthTest();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.disableBlend();
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, alpha);
+    }
+
+    private static void drawIsolatedItem(DrawContext context, ItemRenderState model,
+                                         ItemStack stack, int x, int y) {
+        // Match native item boundaries without resolving the live model twice.
+        resetItemRenderState();
+        boolean flat = !model.isSideLit();
+        if (flat) {
+            context.draw();
+            DiffuseLighting.disableGuiDepthLighting();
+        }
+        try {
+            drawBatchedItem(context, model, stack, x, y);
+            context.draw();
+        } finally {
+            if (flat) DiffuseLighting.enableGuiDepthLighting();
+        }
+    }
+
+    private static void drawBatchedItem(DrawContext context, ItemRenderState model,
+                                        ItemStack stack, int x, int y) {
+        var matrices = context.getMatrices();
+        matrices.push();
+        try {
+            matrices.translate(x + 8.0F, y + 8.0F, 150.0F);
+            matrices.scale(16.0F, -16.0F, 16.0F);
+            model.render(matrices, context.vertexConsumers, 15728880, OverlayTexture.DEFAULT_UV);
+        } catch (Throwable error) {
+            CrashReport report = CrashReport.create(error, "Rendering shulker preview item");
+            CrashReportSection section = report.addElement("Item being rendered");
+            section.add("Item Type", () -> String.valueOf(stack.getItem()));
+            section.add("Item Components", () -> String.valueOf(stack.getComponents()));
+            section.add("Item Foil", () -> String.valueOf(stack.hasGlint()));
+            throw new CrashException(report);
+        } finally {
+            matrices.pop();
+        }
     }
 
     private static boolean computeOverlayFlag(ItemStack stack, MinecraftClient mc) {

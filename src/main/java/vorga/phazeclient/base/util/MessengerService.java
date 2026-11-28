@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import net.minecraft.client.MinecraftClient;
 
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -34,6 +35,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
+import java.util.zip.GZIPInputStream;
 
 /**
  * Background HTTP/SSE transport for the private messenger.
@@ -1074,7 +1076,8 @@ public final class MessengerService {
     private boolean stateResponseOk(HttpResult result, String name) {
         if (result.status == 200) return true;
         if (result.status == 401) token = null;
-        LOG.warn("Messenger {} unavailable: HTTP {}", name, result.status);
+        // 599 is a local transport failure, already logged with the actual exception in request().
+        if (result.status != 599) LOG.warn("Messenger {} unavailable: HTTP {}", name, result.status);
         return false;
     }
 
@@ -1914,6 +1917,7 @@ public final class MessengerService {
     }
 
     private HttpResult request(String method, String path, String body, boolean authenticated) {
+        long startedAt = System.nanoTime();
         try {
             String base = RemoteRulesService.getInstance().getApiBase();
             HttpURLConnection connection = (HttpURLConnection) URI.create(base + path).toURL().openConnection();
@@ -1922,6 +1926,7 @@ public final class MessengerService {
                 connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
                 connection.setReadTimeout(READ_TIMEOUT_MS);
                 connection.setRequestProperty("Accept", "application/json");
+                connection.setRequestProperty("Accept-Encoding", "gzip");
                 connection.setRequestProperty("User-Agent", USER_AGENT);
                 if (authenticated && token != null) connection.setRequestProperty("Authorization", "Bearer " + token);
                 if (body != null) {
@@ -1933,13 +1938,19 @@ public final class MessengerService {
                     }
                 }
                 int statusCode = connection.getResponseCode();
-                var input = statusCode >= 400 ? connection.getErrorStream() : connection.getInputStream();
-                String response = input == null ? "{}" : new String(input.readAllBytes(), StandardCharsets.UTF_8);
-                return new HttpResult(statusCode, response);
+                try (InputStream raw = statusCode >= 400 ? connection.getErrorStream() : connection.getInputStream()) {
+                    if (raw == null) return new HttpResult(statusCode, "{}");
+                    try (InputStream input = "gzip".equalsIgnoreCase(connection.getContentEncoding())
+                            ? new GZIPInputStream(raw) : raw) {
+                        return new HttpResult(statusCode, new String(input.readAllBytes(), StandardCharsets.UTF_8));
+                    }
+                }
             } finally {
                 connection.disconnect();
             }
         } catch (Throwable throwable) {
+            LOG.warn("Messenger {} {} failed after {} ms: {}", method, path,
+                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt), throwable.toString());
             LOG.debug("Messenger request failed: {} {}", method, path, throwable);
             return new HttpResult(599, "{}");
         }

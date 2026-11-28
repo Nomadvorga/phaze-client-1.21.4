@@ -226,6 +226,10 @@ public class WaypointEditorModal extends AbstractComponent {
         return open;
     }
 
+    public boolean shouldRender() {
+        return open || openAnimation.getOutputFloat() > 0.001F;
+    }
+
     private float modalX() {
         return x + (width - W) / 2.0F;
     }
@@ -238,13 +242,13 @@ public class WaypointEditorModal extends AbstractComponent {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        if (!open && openAnimation.getOutputFloat() <= 0.001F) return;
+        if (!shouldRender()) return;
         Theme.getInstance().syncLanguage();
         float progress = openAnimation.getOutputFloat();
         alpha = progress * globalAlpha;
         if (!open) {
-            mouseX = Integer.MIN_VALUE / 4;
-            mouseY = Integer.MIN_VALUE / 4;
+            mouseX = INACTIVE_MOUSE;
+            mouseY = INACTIVE_MOUSE;
         }
         MatrixStack matrices = context.getMatrices();
         rectangle.render(ShapeProperties.create(matrices, x, y, width, height)
